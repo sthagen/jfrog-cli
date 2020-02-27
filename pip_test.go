@@ -1,8 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"io"
 	"os"
 	"os/exec"
@@ -11,8 +12,6 @@ import (
 	"testing"
 
 	gofrogcmd "github.com/jfrog/gofrog/io"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/pip"
-	piputils "github.com/jfrog/jfrog-cli-go/artifactory/utils/pip"
 	"github.com/jfrog/jfrog-cli-go/inttestutils"
 	"github.com/jfrog/jfrog-cli-go/utils/cliutils"
 	"github.com/jfrog/jfrog-cli-go/utils/tests"
@@ -81,20 +80,16 @@ func TestPipInstall(t *testing.T) {
 
 func testPipCmd(t *testing.T, outputFolder, projectPath, buildNumber, module string, expectedDependencies int, args []string) {
 	wd, err := os.Getwd()
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(t, err)
 	err = os.Chdir(projectPath)
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(t, err)
 	defer os.Chdir(wd)
 
 	args = append(args, "--build-number="+buildNumber)
 
 	err = artifactoryCli.Exec(args...)
 	if err != nil {
-		t.Errorf("Failed executing pip-install command: %s", err.Error())
+		assert.Fail(t, "Failed executing pip-install command", err.Error())
 		cleanPipTest(t, outputFolder)
 		return
 	}
@@ -102,17 +97,9 @@ func testPipCmd(t *testing.T, outputFolder, projectPath, buildNumber, module str
 	artifactoryCli.Exec("bp", tests.PipBuildName, buildNumber)
 
 	buildInfo := inttestutils.GetBuildInfo(artifactoryDetails.Url, tests.PipBuildName, buildNumber, t, artHttpDetails)
-	if buildInfo.Modules == nil || len(buildInfo.Modules) == 0 {
-		t.Error("Pip build info was not generated correctly, no modules were created.")
-	}
-
-	if expectedDependencies != len(buildInfo.Modules[0].Dependencies) {
-		t.Error("Incorrect number of artifacts found in the build-info, expected:", expectedDependencies, " Found:", len(buildInfo.Modules[0].Dependencies))
-	}
-
-	if module != buildInfo.Modules[0].Id {
-		t.Error(fmt.Errorf("Expected module name %s, got %s", module, buildInfo.Modules[0].Id))
-	}
+	require.NotEmpty(t, buildInfo.Modules, "Pip build info was not generated correctly, no modules were created.")
+	assert.Len(t, buildInfo.Modules[0].Dependencies, expectedDependencies, "Incorrect number of artifacts found in the build-info")
+	assert.Equal(t, module, buildInfo.Modules[0].Id, "Unexpected module name")
 }
 
 func cleanPipTest(t *testing.T, outFolder string) {
@@ -130,18 +117,12 @@ func cleanPipTest(t *testing.T, outFolder string) {
 
 	// Save freeze output to file.
 	freezeTarget, err := fileutils.CreateFilePath(tests.Temp, outFolder+"-freeze.txt")
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(t, err)
 	file, err := os.Create(freezeTarget)
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(t, err)
 	defer file.Close()
 	_, err = file.Write([]byte(out))
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(t, err)
 
 	// Delete freezed packages.
 	pipUninstallCmd := &PipCmd{Command: "uninstall", Options: []string{"-y", "-r", freezeTarget}}
@@ -155,15 +136,11 @@ func createPipProject(t *testing.T, outFolder, projectName string) string {
 	projectSrc := filepath.Join(filepath.FromSlash(tests.GetTestResourcesPath()), "pip", projectName)
 	projectTarget := filepath.Join(tests.Out, outFolder+"-"+projectName)
 	err := fileutils.CreateDirIfNotExist(projectTarget)
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(t, err)
 
 	// Copy pip-installation file.
 	err = fileutils.CopyDir(projectSrc, projectTarget, true)
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(t, err)
 
 	// Copy pip-config file.
 	configSrc := filepath.Join(filepath.FromSlash(tests.GetTestResourcesPath()), "pip", "pip.yaml")
@@ -177,18 +154,8 @@ func initPipTest(t *testing.T) {
 	if !*tests.TestPip {
 		t.Skip("Skipping Pip test. To run Pip test add the '-test.pip=true' option.")
 	}
-
-	if !isRepoExist(tests.PypiRemoteRepo) {
-		t.Error("Pypi test remote repository doesn't exist.")
-	}
-
-	if !isRepoExist(tests.PypiVirtualRepo) {
-		t.Error("Pypi test virtual repository doesn't exist.")
-	}
-
-	if t.Failed() {
-		t.FailNow()
-	}
+	require.True(t, isRepoExist(tests.PypiRemoteRepo), "Pypi test remote repository doesn't exist.")
+	require.True(t, isRepoExist(tests.PypiVirtualRepo), "Pypi test virtual repository doesn't exist.")
 }
 
 func setPathEnvForPipInstall(t *testing.T) string {
@@ -248,133 +215,4 @@ func (pfc *PipCmd) GetStdWriter() io.WriteCloser {
 
 func (pfc *PipCmd) GetErrWriter() io.WriteCloser {
 	return nil
-}
-
-func TestPipDepsTree(t *testing.T) {
-	initPipTest(t)
-
-	// Add virtual-environment path to 'PATH' for executing all pip and python commands inside the virtual-environment.
-	pathValue := setPathEnvForPipInstall(t)
-	if t.Failed() {
-		t.FailNow()
-	}
-	defer os.Setenv("PATH", pathValue)
-
-	// Check pip env is clean.
-	validateEmptyPipEnv(t)
-
-	// Populate cli config with 'default' server.
-	oldHomeDir, newHomeDir := prepareHomeDir(t)
-	defer os.Setenv(cliutils.HomeDir, oldHomeDir)
-	defer os.RemoveAll(newHomeDir)
-
-	// Create test cases.
-	allTests := []struct {
-		name                 string
-		project              string
-		outputFolder         string
-		moduleId             string
-		args                 []string
-		expectedDependencies int
-		cleanAfterExecution  bool
-	}{
-		{"setuppy", "setuppyproject", "setuppy", "jfrog-python-example", []string{".", "--no-cache-dir", "--force-reinstall"}, 3, true},
-		{"setuppy-verbose", "setuppyproject", "setuppy-verbose", "jfrog-python-example", []string{".", "--no-cache-dir", "--force-reinstall", "-v"}, 3, true},
-		{"setuppy-with-module", "setuppyproject", "setuppy-with-module", "setuppy-with-module", []string{".", "--no-cache-dir", "--force-reinstall"}, 3, true},
-		{"requirements", "requirementsproject", "requirements", tests.PipBuildName, []string{"-r", "requirements.txt", "--no-cache-dir", "--force-reinstall"}, 5, true},
-		{"requirements-verbose", "requirementsproject", "requirements-verbose", tests.PipBuildName, []string{"-r", "requirements.txt", "--no-cache-dir", "--force-reinstall", "-v"}, 5, false},
-		{"requirements-use-cache", "requirementsproject", "requirements-verbose", "requirements-verbose-use-cache", []string{"-r", "requirements.txt"}, 5, true},
-	}
-
-	// Run test cases.
-	for _, test := range allTests {
-		t.Run(test.name, func(t *testing.T) {
-			testPipDepsTreeCmd(t, createPipProject(t, test.outputFolder, test.project), test.expectedDependencies, test.args)
-			if test.cleanAfterExecution {
-				// cleanup
-				cleanPipTest(t, test.name)
-			}
-		})
-	}
-	cleanPipTest(t, "cleanup")
-	tests.CleanFileSystem()
-}
-
-func testPipDepsTreeCmd(t *testing.T, projectPath string, expectedElements int, args []string) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = os.Chdir(projectPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(wd)
-
-	// Get pip configuration.
-	pipConfig, err := piputils.GetPipConfiguration()
-	if err != nil {
-		t.Fatalf("Error occurred while attempting to read pip-configuration file: %s\n"+
-			"Please run 'jfrog rt pip-config' command prior to running 'jfrog rt pip-deps-tree'.", err.Error())
-	}
-	// Set arg values.
-	rtDetails, err := pipConfig.RtDetails()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create command.
-	pipDepsTreeCmd := pip.NewPipDepTreeCommand()
-	pipDepsTreeCmd.SetRtDetails(rtDetails).SetRepo(pipConfig.TargetRepo()).SetArgs(args)
-
-	err = pipDepsTreeCmd.Run()
-	if err != nil {
-		t.Fatalf("Failed while executing pip-deps-tree command: %s", err)
-	}
-
-	// Check result elements.
-	treeJsonData, err := pipDepsTreeCmd.DepsTreeRoot.MarshalJSON()
-	if err != nil {
-		t.Fatalf("Failed parsing tree json: %s", err)
-	}
-
-	// Count dependencies.
-	var depsTreeTest []DependenciesTreeTest
-	err = json.Unmarshal(treeJsonData, &depsTreeTest)
-	if err != nil {
-		t.Error(err)
-	}
-	depsCount := countDependencies(depsTreeTest)
-
-	if expectedElements != depsCount {
-		t.Errorf("Incorrect number of dependencies found, expected: %d, found: %d", expectedElements, depsCount)
-	}
-}
-
-type DependenciesTreeTest struct {
-	Id                 string                 `json:"id,omitempty"`
-	DirectDependencies []DependenciesTreeTest `json:"dependencies,omitempty"`
-}
-
-func countDependencies(allDeps []DependenciesTreeTest) int {
-	depsMap := make(map[string]int)
-	// Iterate over dependencies, resolve and discover more dependencies.
-	index := -1
-	var currentDep string
-	for {
-		index++
-		// Check if should stop.
-		if len(allDeps) < index+1 {
-			break
-		}
-		currentDep = allDeps[index].Id
-		// Check if current dependency already resolved.
-		if _, ok := depsMap[currentDep]; ok {
-			// Already resolved.
-			continue
-		}
-		// Add currentDep dependencies for cound.
-		allDeps = append(allDeps, allDeps[index].DirectDependencies...)
-	}
-	return index
 }

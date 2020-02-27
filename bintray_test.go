@@ -2,12 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -49,7 +49,7 @@ func TestBintrayPackages(t *testing.T) {
 	bintrayCli.Exec("package-create", packagePath, "--licenses=Apache-2.0", "--vcs-url=vcs.url.com")
 	bintrayCli.Exec("package-show", packagePath)
 	bintrayCli.Exec("package-update", packagePath, "--licenses=GPL-3.0", "--vcs-url=other.url.com")
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("package-delete", packagePath)
 
 	cleanBintrayTest()
 }
@@ -65,8 +65,8 @@ func TestBintrayVersions(t *testing.T) {
 	bintrayCli.Exec("version-show", versionPath)
 	bintrayCli.Exec("version-update", versionPath, "--desc=newVersionDescription", "--vcs-tag=new.vcs.tag")
 	bintrayCli.Exec("version-publish", versionPath)
-	bintrayCli.Exec("version-delete", versionPath, "--quiet=true")
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("version-delete", versionPath)
+	bintrayCli.Exec("package-delete", packagePath)
 
 	cleanBintrayTest()
 }
@@ -96,7 +96,7 @@ func TestBintraySimpleUpload(t *testing.T) {
 		Sha1:    "507ac63c6b0f650fb6f36b5621e70ebca3b0965c"}}
 	assertPackageFiles(expected, getPackageFiles(packageName), t)
 
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("package-delete", packagePath)
 	cleanBintrayTest()
 }
 
@@ -124,7 +124,7 @@ func TestBintrayUploadNoVersion(t *testing.T) {
 		Sha1:    "507ac63c6b0f650fb6f36b5621e70ebca3b0965c"}}
 	assertPackageFiles(expected, getPackageFiles(packageName), t)
 
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("package-delete", packagePath)
 	cleanBintrayTest()
 }
 
@@ -135,10 +135,7 @@ func TestBintrayUploadFromHomeDir(t *testing.T) {
 	testFileAbs := fileutils.GetHomeDir() + fileutils.GetFileSeparator() + filename
 
 	d1 := []byte("test file")
-	err := ioutil.WriteFile(testFileAbs, d1, 0644)
-	if err != nil {
-		t.Error("Couldn't create file:", err)
-	}
+	assert.NoError(t, ioutil.WriteFile(testFileAbs, d1, 0644), "Couldn't create file")
 
 	packageName := "simpleUploadHomePackage"
 	packagePath := bintrayOrganization + "/" + tests.BintrayRepo1 + "/" + packageName
@@ -158,7 +155,7 @@ func TestBintrayUploadFromHomeDir(t *testing.T) {
 	assertPackageFiles(expected, getPackageFiles(packageName), t)
 
 	os.Remove(testFileAbs)
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("package-delete", packagePath)
 	cleanBintrayTest()
 }
 
@@ -177,7 +174,7 @@ func TestBintrayUploadOverride(t *testing.T) {
 	bintrayCli.Exec("upload", path, versionPath, "a1.in", "--flat=true", "--recursive=false", "--override=true")
 	assertPackageFiles(tests.BintrayExpectedUploadFlatNonRecursiveModified, getPackageFiles(tests.BintrayUploadTestPackageName), t)
 
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("package-delete", packagePath)
 	cleanBintrayTest()
 }
 
@@ -226,7 +223,7 @@ func TestBintrayLogs(t *testing.T) {
 	assertPackageFiles(tests.BintrayExpectedUploadFlatRecursive, getPackageFiles(tests.BintrayUploadTestPackageName), t)
 	bintrayCli.Exec("logs", packagePath)
 
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("package-delete", packagePath)
 	cleanBintrayTest()
 }
 
@@ -260,27 +257,19 @@ func TestBintrayFileDownloads(t *testing.T) {
 
 	// File a1.in
 	args = []string{"download-file", repositoryPath + "/a1.in", tests.Out + "/bintray/", "--unpublished=true"}
-	if err := retryExecutor.Execute(); err != nil {
-		t.Error(err.Error())
-	}
+	assert.NoError(t, retryExecutor.Execute())
 
 	// File b1.in
 	args = []string{"download-file", repositoryPath + "/b1.in", tests.Out + "/bintray/x.in", "--unpublished=true"}
-	if err := retryExecutor.Execute(); err != nil {
-		t.Error(err.Error())
-	}
+	assert.NoError(t, retryExecutor.Execute())
 
 	// File c1.in
 	args = []string{"download-file", repositoryPath + "/(c)1.in", tests.Out + "/bintray/z{1}.in", "--unpublished=true"}
-	if err := retryExecutor.Execute(); err != nil {
-		t.Error(err.Error())
-	}
+	assert.NoError(t, retryExecutor.Execute())
 
 	// File a/a1.in
 	args = []string{"download-file", repositoryPath + "/" + tests.GetTestResourcesPath() + "(a)/a1.in", tests.Out + "/bintray/{1}/fullpatha1.in", "--flat=true --unpublished=true"}
-	if err := retryExecutor.Execute(); err != nil {
-		t.Error(err.Error())
-	}
+	assert.NoError(t, retryExecutor.Execute())
 
 	//Validate that files were downloaded as expected
 	expected := []string{
@@ -290,10 +279,10 @@ func TestBintrayFileDownloads(t *testing.T) {
 		filepath.Join(tests.Out, "bintray", "a", "fullpatha1.in"),
 	}
 	paths, _ := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out+"/bintray/", false)
-	tests.IsExistLocally(expected, paths, t)
+	tests.VerifyExistLocally(expected, paths, t)
 
 	// Cleanup
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("package-delete", packagePath)
 	cleanBintrayTest()
 }
 
@@ -321,17 +310,17 @@ func TestBintrayVersionDownloads(t *testing.T) {
 		filepath.Join(tests.Out, "bintray", "c2.in"),
 		filepath.Join(tests.Out, "bintray", "c3.in"),
 	}
-	tests.IsExistLocally(expected, paths, t)
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	tests.VerifyExistLocally(expected, paths, t)
+	bintrayCli.Exec("package-delete", packagePath)
 	cleanBintrayTest()
 }
 
 // Tests compatibility to file paths with windows separators.
 func TestBintrayUploadWindowsCompatibility(t *testing.T) {
-	if !cliutils.IsWindows() {
-		return
-	}
 	initBintrayTest(t)
+	if !cliutils.IsWindows() {
+		t.Skip("Not running on Windows, skipping...")
+	}
 
 	packageName := "simpleUploadPackage"
 	packagePath := bintrayOrganization + "/" + tests.BintrayRepo1 + "/" + packageName
@@ -355,7 +344,7 @@ func TestBintrayUploadWindowsCompatibility(t *testing.T) {
 		Sha1:    "507ac63c6b0f650fb6f36b5621e70ebca3b0965c"}}
 	assertPackageFiles(expected, getPackageFiles(packageName), t)
 
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("package-delete", packagePath)
 	cleanBintrayTest()
 }
 
@@ -422,7 +411,7 @@ func testBintrayUpload(t *testing.T, relPath, flags string, expected []tests.Pac
 
 	bintrayCli.Exec("upload", tests.GetTestResourcesPath()+relPath, versionPath, flags)
 	assertPackageFiles(expected, getPackageFiles(tests.BintrayUploadTestPackageName), t)
-	bintrayCli.Exec("package-delete", packagePath, "--quiet=true")
+	bintrayCli.Exec("package-delete", packagePath)
 }
 
 func getPackageFiles(packageName string) []tests.PackageSearchResultItem {
@@ -457,9 +446,7 @@ func getPackageFiles(packageName string) []tests.PackageSearchResultItem {
 }
 
 func assertPackageFiles(expected, actual []tests.PackageSearchResultItem, t *testing.T) {
-	if len(actual) != len(expected) {
-		t.Error("Expected: " + strconv.Itoa(len(expected)) + ", Got: " + strconv.Itoa(len(actual)) + " files.")
-	}
+	assert.Equal(t, len(expected), len(actual))
 
 	expectedMap := make(map[string]tests.PackageSearchResultItem)
 	for _, v := range expected {
@@ -472,14 +459,12 @@ func assertPackageFiles(expected, actual []tests.PackageSearchResultItem, t *tes
 	}
 
 	for _, v := range actual {
-		if _, ok := expectedMap[packageFileHash(v)]; !ok {
-			t.Error("Unexpected file:", v)
-		}
+		_, ok := expectedMap[packageFileHash(v)]
+		assert.True(t, ok, "Unexpected file:", v)
 	}
 	for _, v := range expected {
-		if _, ok := actualMap[packageFileHash(v)]; !ok {
-			t.Error("File not found:", v)
-		}
+		_, ok := actualMap[packageFileHash(v)]
+		assert.True(t, ok, "File not found:", v)
 	}
 }
 

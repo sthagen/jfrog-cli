@@ -4,7 +4,9 @@ import "strconv"
 
 type builder struct {
 	pattern         string
+	// Deprecated, use Exclusions instead
 	excludePatterns []string
+	exclusions      []string
 	target          string
 	explode         string
 	props           string
@@ -14,6 +16,7 @@ type builder struct {
 	offset          int
 	limit           int
 	build           string
+	bundle          string
 	recursive       bool
 	flat            bool
 	regexp          bool
@@ -37,6 +40,11 @@ func (b *builder) ArchiveEntries(archiveEntries string) *builder {
 
 func (b *builder) ExcludePatterns(excludePatterns []string) *builder {
 	b.excludePatterns = excludePatterns
+	return b
+}
+
+func (b *builder) Exclusions(exclusions []string) *builder {
+	b.exclusions = exclusions
 	return b
 }
 
@@ -85,6 +93,11 @@ func (b *builder) Build(build string) *builder {
 	return b
 }
 
+func (b *builder) Bundle(bundle string) *builder {
+	b.bundle = bundle
+	return b
+}
+
 func (b *builder) Recursive(recursive bool) *builder {
 	b.recursive = recursive
 	return b
@@ -110,7 +123,9 @@ func (b *builder) BuildSpec() *SpecFiles {
 		Files: []File{
 			{
 				Pattern:         b.pattern,
+				// Deprecated, use Exclusions instead
 				ExcludePatterns: b.excludePatterns,
+				Exclusions:      b.exclusions,
 				Target:          b.target,
 				Props:           b.props,
 				ExcludeProps:	 b.excludeProps,
@@ -119,6 +134,7 @@ func (b *builder) BuildSpec() *SpecFiles {
 				Offset:          b.offset,
 				Limit:           b.limit,
 				Build:           b.build,
+				Bundle:          b.bundle,
 				Explode:         b.explode,
 				Recursive:       strconv.FormatBool(b.recursive),
 				Flat:            strconv.FormatBool(b.flat),

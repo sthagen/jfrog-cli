@@ -446,7 +446,7 @@ func getCreateAndUpdateVersionFlags() []cli.Flag {
 func getDeletePackageAndVersionFlags() []cli.Flag {
 	return append(getFlags(), cli.BoolFlag{
 		Name:  "quiet",
-		Usage: "[Default: false] Set to true to skip the delete confirmation message.",
+		Usage: "[Default: $CI] Set to true to skip the delete confirmation message.",
 	})
 }
 
@@ -507,6 +507,10 @@ func getUploadFlags() []cli.Flag {
 		cli.BoolFlag{
 			Name:  "override",
 			Usage: "[Default: false] Set to true to enable overriding existing published files.",
+		},
+		cli.BoolFlag{
+			Name:  "list-download",
+			Usage: "[Default: false] Set to true to add the files to the download list. Requires the --publish option.",
 		},
 		cli.BoolFlag{
 			Name:  "explode",
@@ -635,10 +639,10 @@ func configure(c *cli.Context) error {
 			return errors.New("Unknown argument '" + c.Args().Get(0) + "'. Available arguments are 'show' and 'clear'.")
 		}
 	} else {
-		interactive := c.BoolT("interactive")
+		interactive := cliutils.GetInteractiveValue(c)
 		if !interactive {
 			if c.String("user") == "" || c.String("key") == "" {
-				return errors.New("The --user and --key options are mandatory when the --interactive option is set to false")
+				return errors.New("The --user and --key options are mandatory when the --interactive option is set to false or the CI environment variable is set to true.")
 			}
 		}
 		bintrayDetails, err := createBintrayDetails(c, false)
@@ -774,7 +778,7 @@ func deletePackage(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if !c.Bool("quiet") {
+	if !cliutils.GetQuietValue(c) {
 		confirmed := cliutils.InteractiveConfirm("Delete package " + packagePath.Package + "?")
 		if !confirmed {
 			return nil
@@ -796,7 +800,7 @@ func deleteVersion(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if !c.Bool("quiet") {
+	if !cliutils.GetQuietValue(c) {
 		confirmed := cliutils.InteractiveConfirm("Delete version " + versionPath.Version +
 			" of package " + versionPath.Package + "?")
 		if !confirmed {
@@ -883,9 +887,14 @@ func upload(c *cli.Context) error {
 	params.Recursive = c.BoolT("recursive")
 	params.Flat = c.BoolT("flat")
 	params.Publish = c.Bool("publish")
+	params.ShowInDownloadList = c.Bool("list-download")
 	params.Override = c.Bool("override")
 	params.Explode = c.Bool("explode")
 	params.UseRegExp = c.Bool("regexp")
+
+	if params.ShowInDownloadList && !params.Publish {
+		return errors.New("The --list-download option cannot be used without the --publish option.")
+	}
 
 	uploadConfig, err := newBintrayConfig(c)
 	if err != nil {
@@ -1327,7 +1336,7 @@ func offerConfig(c *cli.Context) (*config.BintrayDetails, error) {
 		"- API Key\n" +
 		"- Default Package Licenses\n" +
 		"Configuring JFrog CLI with these parameters now will save you having to include them as command options.\n" +
-		"You can also configure these parameters later using the 'config' command.\n" +
+		"You can also configure these parameters later using the 'jfrog bt c' command.\n" +
 		"Configure now?"
 	confirmed := cliutils.InteractiveConfirm(msg)
 	if !confirmed {

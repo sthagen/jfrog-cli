@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -30,13 +31,14 @@ var RtApiKey *string
 var RtSshKeyPath *string
 var RtSshPassphrase *string
 var RtAccessToken *string
+var RtDistributionUrl *string
 var BtUser *string
 var BtKey *string
 var BtOrg *string
 var TestArtifactory *bool
 var TestBintray *bool
 var TestArtifactoryProxy *bool
-var TestBuildTools *bool
+var TestDistribution *bool
 var TestDocker *bool
 var TestGo *bool
 var TestNpm *bool
@@ -57,13 +59,14 @@ func init() {
 	RtSshKeyPath = flag.String("rt.sshKeyPath", "", "Ssh key file path")
 	RtSshPassphrase = flag.String("rt.sshPassphrase", "", "Ssh key passphrase")
 	RtAccessToken = flag.String("rt.accessToken", "", "Artifactory access token")
+	RtDistributionUrl = flag.String("rt.distributionUrl", "", "Distribution url")
 	TestArtifactory = flag.Bool("test.artifactory", false, "Test Artifactory")
 	TestArtifactoryProxy = flag.Bool("test.artifactoryProxy", false, "Test Artifactory proxy")
 	TestBintray = flag.Bool("test.bintray", false, "Test Bintray")
 	BtUser = flag.String("bt.user", "", "Bintray username")
 	BtKey = flag.String("bt.key", "", "Bintray API Key")
 	BtOrg = flag.String("bt.org", "", "Bintray organization")
-	TestBuildTools = flag.Bool("test.buildTools", false, "Test Maven, Gradle and npm builds")
+	TestDistribution = flag.Bool("test.distribution", false, "Test distribution")
 	TestDocker = flag.Bool("test.docker", false, "Test Docker build")
 	TestGo = flag.Bool("test.go", false, "Test Go")
 	TestNpm = flag.Bool("test.npm", false, "Test Npm")
@@ -93,14 +96,12 @@ func removeDirs(dirs ...string) {
 	}
 }
 
-func IsExistLocally(expected, actual []string, t *testing.T) {
+func VerifyExistLocally(expected, actual []string, t *testing.T) {
 	if len(actual) == 0 && len(expected) != 0 {
 		t.Error("Couldn't find all expected files, expected: " + strconv.Itoa(len(expected)) + ", found: " + strconv.Itoa(len(actual)))
 	}
 	err := compare(expected, actual)
-	if err != nil {
-		t.Error(err.Error())
-	}
+	assert.NoError(t, err)
 }
 
 func ValidateListsIdentical(expected, actual []string) error {
@@ -141,9 +142,17 @@ func compare(expected, actual []string) error {
 	return nil
 }
 
-func CompareExpectedVsActuals(expected []string, actual []generic.SearchResult, t *testing.T) {
+func getPathsFromSearchResults(searchResults []generic.SearchResult) []string {
+	var paths []string
+	for _, result := range searchResults {
+		paths = append(paths, result.Path)
+	}
+	return paths
+}
+
+func CompareExpectedVsActual(expected []string, actual []generic.SearchResult, t *testing.T) {
 	if len(actual) != len(expected) {
-		t.Error(fmt.Sprintf("Unexpected behavior, expected: %s, \n%s\nfound: %s \n%s", strconv.Itoa(len(expected)), expected, strconv.Itoa(len(actual)), actual))
+		t.Error(fmt.Sprintf("Unexpected behavior, expected: %s, \n%s\nfound: %s \n%s", strconv.Itoa(len(expected)), expected, strconv.Itoa(len(actual)), getPathsFromSearchResults(actual)))
 	}
 	for _, v := range expected {
 		for i, r := range actual {
