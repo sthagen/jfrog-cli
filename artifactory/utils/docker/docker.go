@@ -10,20 +10,21 @@ import (
 	"strings"
 
 	gofrogcmd "github.com/jfrog/gofrog/io"
-	"github.com/jfrog/jfrog-cli-go/artifactory/utils"
 	"github.com/jfrog/jfrog-cli-go/utils/cliutils"
 	"github.com/jfrog/jfrog-cli-go/utils/config"
 	"github.com/jfrog/jfrog-client-go/artifactory"
-	"github.com/jfrog/jfrog-client-go/artifactory/auth"
+	"github.com/jfrog/jfrog-client-go/auth"
+	clientConfig "github.com/jfrog/jfrog-client-go/config"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
 	"github.com/jfrog/jfrog-client-go/utils/log"
 	"github.com/jfrog/jfrog-client-go/utils/version"
 )
 
-// Search for version format pattern e.g. 1.2.3
-var versionRegex = regexp.MustCompile(`(?:(\d+)\.)?(?:(\d+)\.)?(?:(\d+)\.\d+)`)
+// Search for docker API version format pattern e.g. 1.40
+var ApiVersionRegex = regexp.MustCompile(`^(\d+)\.(\d+)$`)
 
-const MinSupportedVersion string = "17.07.0"
+// Docker API version 1.31 is compatible with Docker version 17.07.0, according to https://docs.docker.com/engine/api/#api-version-matrix
+const MinSupportedApiVersion string = "1.31"
 
 // Docker login error message
 const DockerLoginFailureMessage string = "Docker login failed for: %s.\nDocker image must be in the form: docker-registry-domain/path-in-repository/image-name:version."
@@ -37,6 +38,7 @@ type Image interface {
 	Push() error
 	Id() (string, error)
 	ParentId() (string, error)
+	Manifest() (string, error)
 	Tag() string
 	Path() string
 	Name() string
@@ -86,6 +88,13 @@ func (image *image) Path() string {
 		return path.Join(image.tag[indexOfFirstSlash:], "latest")
 	}
 	return path.Join(image.tag[indexOfFirstSlash:indexOfLastColon], image.tag[indexOfLastColon+1:])
+}
+
+// Get docker image manifest
+func (image *image) Manifest() (string, error) {
+	cmd := &getImageManifestCmd{image: image}
+	content, err := gofrogcmd.RunCmdOutput(cmd)
+	return content, err
 }
 
 // Get docker image name
@@ -156,6 +165,23 @@ func (getImageId *getImageIdCmd) GetErrWriter() io.WriteCloser {
 	return nil
 }
 
+type Manifest struct {
+	Descriptor       Descriptor       `json:"descriptor"`
+	SchemaV2Manifest SchemaV2Manifest `json:"SchemaV2Manifest"`
+}
+
+type Descriptor struct {
+	Digest *string `json:"digest"`
+}
+
+type SchemaV2Manifest struct {
+	Config Config `json:"config"`
+}
+
+type Config struct {
+	Digest *string `json:"digest"`
+}
+
 // Image get parent image id command
 type getParentId struct {
 	image *image
@@ -179,6 +205,33 @@ func (getImageId *getParentId) GetStdWriter() io.WriteCloser {
 }
 
 func (getImageId *getParentId) GetErrWriter() io.WriteCloser {
+	return nil
+}
+
+// Get image manifest command
+type getImageManifestCmd struct {
+	image *image
+}
+
+func (getImageManifest *getImageManifestCmd) GetCmd() *exec.Cmd {
+	var cmd []string
+	cmd = append(cmd, "docker")
+	cmd = append(cmd, "manifest")
+	cmd = append(cmd, "inspect")
+	cmd = append(cmd, getImageManifest.image.tag)
+	cmd = append(cmd, "--verbose")
+	return exec.Command(cmd[0], cmd[1:]...)
+}
+
+func (getImageManifest *getImageManifestCmd) GetEnv() map[string]string {
+	return map[string]string{}
+}
+
+func (getImageManifest *getImageManifestCmd) GetStdWriter() io.WriteCloser {
+	return nil
+}
+
+func (getImageManifest *getImageManifestCmd) GetErrWriter() io.WriteCloser {
 	return nil
 }
 
@@ -253,7 +306,7 @@ func (pullCmd *pullCmd) GetErrWriter() io.WriteCloser {
 }
 
 func CreateServiceManager(artDetails *config.ArtifactoryDetails, threads int) (*artifactory.ArtifactoryServicesManager, error) {
-	certPath, err := utils.GetJfrogSecurityDir()
+	certPath, err := cliutils.GetJfrogSecurityDir()
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +315,7 @@ func CreateServiceManager(artDetails *config.ArtifactoryDetails, threads int) (*
 		return nil, err
 	}
 
-	configBuilder := artifactory.NewConfigBuilder().
+	configBuilder := clientConfig.NewConfigBuilder().
 		SetArtDetails(artAuth).
 		SetCertificatesPath(certPath).
 		SetInsecureTls(artDetails.InsecureTls).
@@ -327,10 +380,11 @@ func DockerLogin(imageTag string, config *DockerLoginConfig) error {
 type VersionCmd struct{}
 
 func (versionCmd *VersionCmd) GetCmd() *exec.Cmd {
-	if cliutils.IsWindows() {
-		return exec.Command("cmd", "/C", "echo", "%DOCKER_PASS%|", "docker", "--version")
-	}
-	return exec.Command("sh", "-c", "docker --version")
+	var cmd []string
+	cmd = append(cmd, "docker")
+	cmd = append(cmd, "version")
+	cmd = append(cmd, "--format", "{{.Client.APIVersion}}")
+	return exec.Command(cmd[0], cmd[1:]...)
 }
 
 func (versionCmd *VersionCmd) GetEnv() map[string]string {
@@ -345,20 +399,22 @@ func (versionCmd *VersionCmd) GetErrWriter() io.WriteCloser {
 	return nil
 }
 
-func ValidateVersion() error {
+func ValidateClientApiVersion() error {
 	cmd := &VersionCmd{}
+	// 'docker version' may return 1 in case of errors from daemon. We should ignore this kind of errors.
 	content, err := gofrogcmd.RunCmdOutput(cmd)
-	if err != nil {
+	content = strings.TrimSpace(content)
+	if !ApiVersionRegex.Match([]byte(content)) {
+		// The Api version is expected to be 'major.minor'. Anything else should return an error.
 		return errorutils.CheckError(err)
 	}
-	if !checkDockerMinVersion(strings.Trim(content, "\n")) {
-		return errorutils.CheckError(errors.New("This operation requires Docker version " + MinSupportedVersion + " or higher."))
+	if !IsCompatibleApiVersion(content) {
+		return errorutils.CheckError(errors.New("This operation requires Docker API version " + MinSupportedApiVersion + " or higher."))
 	}
 	return nil
 }
 
-func checkDockerMinVersion(dockerOutput string) bool {
-	versionStr := versionRegex.Find([]byte(dockerOutput))
-	currentVersion := version.NewVersion(string(versionStr))
-	return currentVersion.AtLeast(MinSupportedVersion)
+func IsCompatibleApiVersion(dockerOutput string) bool {
+	currentVersion := version.NewVersion(dockerOutput)
+	return currentVersion.AtLeast(MinSupportedApiVersion)
 }

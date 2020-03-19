@@ -35,12 +35,12 @@ node {
             jfrogCliRepoDir = "${cliWorkspace}/${repo}/"
             jfrogCliDir = "${jfrogCliRepoDir}jfrog-cli/jfrog"
             sh "echo jfrogCliDir=$jfrogCliDir"
-            
+
             sh 'go version'
             dir("$jfrogCliRepoDir") {
                 sh './build.sh'
             }
-            
+
             sh 'mkdir builder'
             sh "mv $jfrogCliRepoDir/jfrog builder/"
 
@@ -106,7 +106,7 @@ def buildAndUpload(goos, goarch, pkg, fileExtension) {
     dir("${jfrogCliRepoDir}") {
         env.GOOS="$goos"
         env.GOARCH="$goarch"
-        sh "./build.sh $fileName" 
+        sh "./build.sh $fileName"
 
         if (goos == 'windows') {
             dir("${cliWorkspace}/certs-dir") {
@@ -123,7 +123,7 @@ def buildAndUpload(goos, goarch, pkg, fileExtension) {
             }
         }
     }
-    
+
     uploadToBintray(pkg, fileName)
     sh "rm $jfrogCliRepoDir/$fileName"
 }
