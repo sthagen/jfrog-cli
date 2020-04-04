@@ -9,12 +9,12 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/generic"
-	"github.com/jfrog/jfrog-cli-go/artifactory/utils"
-	"github.com/jfrog/jfrog-cli-go/utils/cliutils"
-	"github.com/jfrog/jfrog-cli-go/utils/config"
-	"github.com/jfrog/jfrog-cli-go/utils/ioutils"
-	"github.com/jfrog/jfrog-cli-go/utils/lock"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/generic"
+	"github.com/jfrog/jfrog-cli/artifactory/utils"
+	"github.com/jfrog/jfrog-cli/utils/cliutils"
+	"github.com/jfrog/jfrog-cli/utils/config"
+	"github.com/jfrog/jfrog-cli/utils/ioutils"
+	"github.com/jfrog/jfrog-cli/utils/lock"
 	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
@@ -256,7 +256,7 @@ func (cc *ConfigCommand) readClientCertInfoFromConsole() {
 
 func (cc *ConfigCommand) readRefreshableTokensFromConsole() {
 	if (cc.details.ApiKey != "" || cc.details.Password != "") && cc.details.AccessToken == "" {
-		cc.useRefreshableToken = cliutils.InteractiveConfirm("Use refreshable tokens?")
+		cc.useRefreshableToken = cliutils.InteractiveConfirm("Replace username and password/API key with automatically created access token that’s refreshed hourly?")
 	}
 }
 

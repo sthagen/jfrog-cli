@@ -1,9 +1,9 @@
 package commands
 
 import (
-	"github.com/jfrog/jfrog-cli-go/artifactory/utils"
-	"github.com/jfrog/jfrog-cli-go/utils/cliutils"
-	"github.com/jfrog/jfrog-cli-go/utils/config"
+	"github.com/jfrog/jfrog-cli/artifactory/utils"
+	"github.com/jfrog/jfrog-cli/utils/cliutils"
+	"github.com/jfrog/jfrog-cli/utils/config"
 	"github.com/jfrog/jfrog-client-go/artifactory/usage"
 	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/log"
@@ -33,25 +33,25 @@ func reportUsage(command Command, channel chan<- bool) {
 	defer signalReportUsageFinished(channel)
 	reportUsage, err := clientutils.GetBoolEnvValue(cliutils.ReportUsage, true)
 	if err != nil {
-		log.Debug(err)
+		log.Debug(usage.ReportUsagePrefix + err.Error())
 		return
 	}
 	if reportUsage {
 		rtDetails, err := command.RtDetails()
 		if err != nil {
-			log.Debug(err)
+			log.Debug(usage.ReportUsagePrefix + err.Error())
 			return
 		}
 		if rtDetails != nil {
-			log.Debug("Sending usage info...")
+			log.Debug(usage.ReportUsagePrefix + "Sending info...")
 			serviceManager, err := utils.CreateServiceManager(rtDetails, false)
 			if err != nil {
-				log.Debug(err)
+				log.Debug(usage.ReportUsagePrefix + err.Error())
 				return
 			}
 			err = usage.SendReportUsage(cliutils.GetUserAgent(), command.CommandName(), serviceManager)
 			if err != nil {
-				log.Debug(err)
+				log.Debug(usage.ReportUsagePrefix + err.Error())
 				return
 			}
 		}

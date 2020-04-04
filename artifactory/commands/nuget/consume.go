@@ -9,16 +9,15 @@ import (
 	"strings"
 
 	gofrogcmd "github.com/jfrog/gofrog/io"
-	"github.com/jfrog/jfrog-cli-go/artifactory/utils"
-	"github.com/jfrog/jfrog-cli-go/artifactory/utils/nuget"
-	"github.com/jfrog/jfrog-cli-go/artifactory/utils/nuget/solution"
-	"github.com/jfrog/jfrog-cli-go/utils/config"
+	"github.com/jfrog/jfrog-cli/artifactory/utils"
+	"github.com/jfrog/jfrog-cli/artifactory/utils/nuget"
+	"github.com/jfrog/jfrog-cli/artifactory/utils/nuget/solution"
+	"github.com/jfrog/jfrog-cli/utils/config"
 	"github.com/jfrog/jfrog-client-go/auth"
 	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
 	"github.com/jfrog/jfrog-client-go/utils/log"
-	"github.com/mattn/go-shellwords"
 )
 
 type NugetCommandArgs struct {
@@ -86,14 +85,11 @@ func (nc *NugetCommand) Run() error {
 	if err != nil {
 		return err
 	}
-	filteredNugetArgs, buildConfiguration, err := utils.ExtractBuildDetailsFromArgs(strings.Split(nc.args, " "))
 	RtDetails, err := resolveParams.RtDetails()
 	if err != nil {
 		return err
 	}
-	nc.SetArgs(strings.Join(filteredNugetArgs, " ")).
-		SetRepoName(resolveParams.TargetRepo()).
-		SetBuildConfiguration(buildConfiguration).
+	nc.SetRepoName(resolveParams.TargetRepo()).
 		SetRtDetails(RtDetails)
 	return nc.run()
 }
@@ -375,14 +371,14 @@ func (nca *NugetCommandArgs) createNugetCmd() (*nuget.Cmd, error) {
 		return nil, err
 	}
 	if nca.args != "" {
-		c.Command, err = shellwords.Parse(nca.args)
+		c.Command, err = utils.ParseArgs(strings.Split(nca.args, " "))
 		if err != nil {
 			return nil, errorutils.CheckError(err)
 		}
 	}
 
 	if nca.flags != "" {
-		c.CommandFlags, err = shellwords.Parse(nca.flags)
+		c.CommandFlags, err = utils.ParseArgs(strings.Split(nca.flags, " "))
 	}
 
 	return c, errorutils.CheckError(err)

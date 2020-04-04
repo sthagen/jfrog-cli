@@ -11,83 +11,83 @@ import (
 	"strings"
 
 	"github.com/codegangsta/cli"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/buildinfo"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/curl"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/distribution"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/docker"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/generic"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/golang"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/gradle"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/mvn"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/npm"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/nuget"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/pip"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/replication"
-	"github.com/jfrog/jfrog-cli-go/artifactory/commands/repository"
-	commandUtils "github.com/jfrog/jfrog-cli-go/artifactory/commands/utils"
-	"github.com/jfrog/jfrog-cli-go/artifactory/spec"
-	"github.com/jfrog/jfrog-cli-go/artifactory/utils"
-	npmUtils "github.com/jfrog/jfrog-cli-go/artifactory/utils/npm"
-	piputils "github.com/jfrog/jfrog-cli-go/artifactory/utils/pip"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/buildadddependencies"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/buildaddgit"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/buildclean"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/buildcollectenv"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/builddiscard"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/builddistribute"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/buildpromote"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/buildpublish"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/buildscan"
-	configdocs "github.com/jfrog/jfrog-cli-go/docs/artifactory/config"
-	copydocs "github.com/jfrog/jfrog-cli-go/docs/artifactory/copy"
-	curldocs "github.com/jfrog/jfrog-cli-go/docs/artifactory/curl"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/delete"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/deleteprops"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/dockerpull"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/dockerpush"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/download"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/gitlfsclean"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/gocommand"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/goconfig"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/gopublish"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/gorecursivepublish"
-	gradledoc "github.com/jfrog/jfrog-cli-go/docs/artifactory/gradle"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/gradleconfig"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/move"
-	mvndoc "github.com/jfrog/jfrog-cli-go/docs/artifactory/mvn"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/mvnconfig"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/npmci"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/npmconfig"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/npminstall"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/npmpublish"
-	nugetdocs "github.com/jfrog/jfrog-cli-go/docs/artifactory/nuget"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/nugetconfig"
-	nugettree "github.com/jfrog/jfrog-cli-go/docs/artifactory/nugetdepstree"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/ping"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/pipconfig"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/pipinstall"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/releasebundlecreate"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/releasebundledelete"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/releasebundledistribute"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/releasebundlesign"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/releasebundleupdate"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/replicationcreate"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/replicationdelete"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/replicationtemplate"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/repocreate"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/repodelete"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/repotemplate"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/repoupdate"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/search"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/setprops"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/upload"
-	"github.com/jfrog/jfrog-cli-go/docs/artifactory/use"
-	"github.com/jfrog/jfrog-cli-go/docs/common"
-	"github.com/jfrog/jfrog-cli-go/utils/cliutils"
-	"github.com/jfrog/jfrog-cli-go/utils/config"
-	"github.com/jfrog/jfrog-cli-go/utils/ioutils"
-	logUtils "github.com/jfrog/jfrog-cli-go/utils/log"
+	"github.com/jfrog/jfrog-cli/artifactory/commands"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/buildinfo"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/curl"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/distribution"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/docker"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/generic"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/golang"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/gradle"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/mvn"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/npm"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/nuget"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/pip"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/replication"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/repository"
+	commandUtils "github.com/jfrog/jfrog-cli/artifactory/commands/utils"
+	"github.com/jfrog/jfrog-cli/artifactory/spec"
+	"github.com/jfrog/jfrog-cli/artifactory/utils"
+	npmUtils "github.com/jfrog/jfrog-cli/artifactory/utils/npm"
+	piputils "github.com/jfrog/jfrog-cli/artifactory/utils/pip"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/buildadddependencies"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/buildaddgit"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/buildclean"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/buildcollectenv"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/builddiscard"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/builddistribute"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/buildpromote"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/buildpublish"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/buildscan"
+	configdocs "github.com/jfrog/jfrog-cli/docs/artifactory/config"
+	copydocs "github.com/jfrog/jfrog-cli/docs/artifactory/copy"
+	curldocs "github.com/jfrog/jfrog-cli/docs/artifactory/curl"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/delete"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/deleteprops"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/dockerpull"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/dockerpush"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/download"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/gitlfsclean"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/gocommand"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/goconfig"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/gopublish"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/gorecursivepublish"
+	gradledoc "github.com/jfrog/jfrog-cli/docs/artifactory/gradle"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/gradleconfig"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/move"
+	mvndoc "github.com/jfrog/jfrog-cli/docs/artifactory/mvn"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/mvnconfig"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/npmci"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/npmconfig"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/npminstall"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/npmpublish"
+	nugetdocs "github.com/jfrog/jfrog-cli/docs/artifactory/nuget"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/nugetconfig"
+	nugettree "github.com/jfrog/jfrog-cli/docs/artifactory/nugetdepstree"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/ping"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/pipconfig"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/pipinstall"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/releasebundlecreate"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/releasebundledelete"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/releasebundledistribute"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/releasebundlesign"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/releasebundleupdate"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/replicationcreate"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/replicationdelete"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/replicationtemplate"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/repocreate"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/repodelete"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/repotemplate"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/repoupdate"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/search"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/setprops"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/upload"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/use"
+	"github.com/jfrog/jfrog-cli/docs/common"
+	"github.com/jfrog/jfrog-cli/utils/cliutils"
+	"github.com/jfrog/jfrog-cli/utils/config"
+	"github.com/jfrog/jfrog-cli/utils/ioutils"
+	logUtils "github.com/jfrog/jfrog-cli/utils/log"
 	buildinfocmd "github.com/jfrog/jfrog-client-go/artifactory/buildinfo"
 	"github.com/jfrog/jfrog-client-go/artifactory/services"
 	distributionServices "github.com/jfrog/jfrog-client-go/distribution/services"
@@ -95,7 +95,6 @@ import (
 	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
 	"github.com/jfrog/jfrog-client-go/utils/log"
-	"github.com/mattn/go-shellwords"
 )
 
 func GetCommands() []cli.Command {
@@ -1777,12 +1776,13 @@ func getBuildScanFlags() []cli.Flag {
 }
 
 func getBuildAddGitFlags() []cli.Flag {
-	return []cli.Flag{
+	bagFlags := []cli.Flag{
 		cli.StringFlag{
 			Name:  "config",
 			Usage: "[Optional] Path to a configuration file.` `",
 		},
 	}
+	return append(bagFlags, getServerIdFlag())
 }
 
 func getCurlFlags() []cli.Flag {
@@ -2004,7 +2004,7 @@ func mvnCmd(c *cli.Context) error {
 		if c.NArg() < 1 {
 			return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 		}
-		args, err := shellwords.Parse(strings.Join(extractCommand(c), " "))
+		args, err := utils.ParseArgs(extractCommand(c))
 		if err != nil {
 			return errorutils.CheckError(err)
 		}
@@ -2045,7 +2045,7 @@ func gradleCmd(c *cli.Context) error {
 		if c.NArg() < 1 {
 			return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 		}
-		args, err := shellwords.Parse(strings.Join(extractCommand(c), " "))
+		args, err := utils.ParseArgs(extractCommand(c))
 		if err != nil {
 			return errorutils.CheckError(err)
 		}
@@ -2150,7 +2150,7 @@ func nugetCmd(c *cli.Context) error {
 			return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 		}
 		// Found a config file.
-		args, err := shellwords.Parse(strings.Join(extractCommand(c), " "))
+		args, err := utils.ParseArgs(extractCommand(c))
 		if err != nil {
 			return errorutils.CheckError(err)
 		}
@@ -2159,8 +2159,12 @@ func nugetCmd(c *cli.Context) error {
 		if err := validateCommand(args, getNugetCommonFlags()); err != nil {
 			return err
 		}
+		filteredNugetArgs, buildConfiguration, err := utils.ExtractBuildDetailsFromArgs(args)
+		if err != nil {
+			return err
+		}
 		nugetCmd := nuget.NewNugetCommand()
-		nugetCmd.SetConfigFilePath(configFilePath).SetArgs(strings.Join(args, " "))
+		nugetCmd.SetConfigFilePath(configFilePath).SetBuildConfiguration(buildConfiguration).SetArgs(strings.Join(filteredNugetArgs, " "))
 		return commands.Exec(nugetCmd)
 	}
 	// If config file not found, use nuget legacy command
@@ -2216,7 +2220,7 @@ func npmLegacyInstallCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	npmInstallArgs, err := shellwords.Parse(c.String("npm-args"))
+	npmInstallArgs, err := utils.ParseArgs(strings.Split(c.String("npm-args"), " "))
 	if err != nil {
 		return err
 	}
@@ -2237,7 +2241,7 @@ func npmInstallCmd(c *cli.Context, npmCmd *npm.NpmInstallCommand, npmLegacyComma
 
 	if exists {
 		// Found a config file. Continue as native command.
-		args, err := shellwords.Parse(strings.Join(extractCommand(c), " "))
+		args, err := utils.ParseArgs(extractCommand(c))
 		if err != nil {
 			return errorutils.CheckError(err)
 		}
@@ -2286,7 +2290,7 @@ func npmPublishCmd(c *cli.Context) error {
 	}
 	if exists {
 		// Found a config file. Continue as native command.
-		args, err := shellwords.Parse(strings.Join(extractCommand(c), " "))
+		args, err := utils.ParseArgs(extractCommand(c))
 		if err != nil {
 			return errorutils.CheckError(err)
 		}
@@ -2317,7 +2321,7 @@ func npmLegacyPublishCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	npmPublicArgs, err := shellwords.Parse(c.String("npm-args"))
+	npmPublicArgs, err := utils.ParseArgs(strings.Split(c.String("npm-args"), " "))
 	if err != nil {
 		return err
 	}
@@ -2467,7 +2471,7 @@ func goLegacyCmd(c *cli.Context) error {
 	if c.Bool("no-registry") && c.NArg() > 2 {
 		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 	}
-	goArg, err := shellwords.Parse(c.Args().Get(0))
+	goArg, err := utils.ParseArgs(strings.Split(c.Args().Get(0), " "))
 	if err != nil {
 		err = cliutils.PrintSummaryReport(0, 1, err)
 	}
@@ -2986,7 +2990,7 @@ func buildAddGitCmd(c *cli.Context) error {
 		return err
 	}
 
-	buildAddGitConfigurationCmd := buildinfo.NewBuildAddGitCommand().SetBuildConfiguration(buildConfiguration).SetConfigFilePath(c.String("config"))
+	buildAddGitConfigurationCmd := buildinfo.NewBuildAddGitCommand().SetBuildConfiguration(buildConfiguration).SetConfigFilePath(c.String("config")).SetServerId(c.String("server-id"))
 	if c.NArg() == 3 {
 		buildAddGitConfigurationCmd.SetDotGitPath(c.Args().Get(2))
 	} else if c.NArg() == 1 {
@@ -3318,7 +3322,7 @@ func repoCreateCmd(c *cli.Context) error {
 	}
 
 	// Run command.
-	repoCreateCmd := repository.NewCreateRepoCommand()
+	repoCreateCmd := repository.NewRepoCreateCommand()
 	repoCreateCmd.SetTemplatePath(c.Args().Get(0)).SetRtDetails(rtDetails).SetVars(c.String("vars"))
 	return commands.Exec(repoCreateCmd)
 }
@@ -3338,9 +3342,9 @@ func repoUpdateCmd(c *cli.Context) error {
 	}
 
 	// Run command.
-	repoCreateCmd := repository.NewUpdateRepoCommand()
-	repoCreateCmd.SetTemplatePath(c.Args().Get(0)).SetRtDetails(rtDetails).SetVars(c.String("vars"))
-	return commands.Exec(repoCreateCmd)
+	repoUpdateCmd := repository.NewRepoUpdateCommand()
+	repoUpdateCmd.SetTemplatePath(c.Args().Get(0)).SetRtDetails(rtDetails).SetVars(c.String("vars"))
+	return commands.Exec(repoUpdateCmd)
 }
 
 func repoDeleteCmd(c *cli.Context) error {
@@ -3515,6 +3519,12 @@ func createArtifactoryDetails(c *cli.Context, includeConfig bool) (details *conf
 			if details.AccessToken == "" {
 				details.AccessToken = confDetails.AccessToken
 			}
+			if details.RefreshToken == "" {
+				details.RefreshToken = confDetails.RefreshToken
+			}
+			if details.TokenRefreshInterval == cliutils.TokenRefreshDisabled {
+				details.TokenRefreshInterval = confDetails.TokenRefreshInterval
+			}
 			if details.ClientCertPath == "" {
 				details.ClientCertPath = confDetails.ClientCertPath
 			}
@@ -3525,6 +3535,8 @@ func createArtifactoryDetails(c *cli.Context, includeConfig bool) (details *conf
 	}
 	details.Url = clientutils.AddTrailingSlashIfNeeded(details.Url)
 	details.DistributionUrl = clientutils.AddTrailingSlashIfNeeded(details.DistributionUrl)
+
+	err = config.CreateInitialRefreshTokensIfNeeded(details)
 	return
 }
 

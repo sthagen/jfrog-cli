@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/jfrog/jfrog-cli-go/utils/cliutils"
-	"github.com/jfrog/jfrog-cli-go/utils/tests"
+	"github.com/jfrog/jfrog-cli/utils/cliutils"
+	"github.com/jfrog/jfrog-cli/utils/tests"
 	"github.com/jfrog/jfrog-client-go/utils/log"
 	clientTests "github.com/jfrog/jfrog-client-go/utils/tests"
 	"os"
@@ -12,7 +12,7 @@ import (
 
 const (
 	JfrogTestsHome      = ".jfrogTest"
-	CliIntegrationTests = "github.com/jfrog/jfrog-cli-go"
+	CliIntegrationTests = "github.com/jfrog/jfrog-cli"
 )
 
 func TestUnitTests(t *testing.T) {
