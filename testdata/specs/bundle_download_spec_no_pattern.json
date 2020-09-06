@@ -1,0 +1,8 @@
+{
+    "files": [
+      {
+        "target": "out/download/simple_by_build/data/",
+        "bundle": "${BUNDLE_NAME}/10"
+      }
+    ]
+  }

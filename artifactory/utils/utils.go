@@ -40,19 +40,19 @@ func getConfigDir(global bool) (string, error) {
 	return cliutils.GetJfrogHomeDir()
 }
 
-func GetEncryptedPasswordFromArtifactory(artifactoryAuth auth.CommonDetails, insecureTls bool) (string, error) {
+func GetEncryptedPasswordFromArtifactory(artifactoryAuth auth.ServiceDetails, insecureTls bool) (string, error) {
 	u, err := url.Parse(artifactoryAuth.GetUrl())
 	if err != nil {
 		return "", err
 	}
 	u.Path = path.Join(u.Path, "api/security/encryptedPassword")
 	httpClientsDetails := artifactoryAuth.CreateHttpClientDetails()
-	securityDir, err := cliutils.GetJfrogSecurityDir()
+	certsPath, err := cliutils.GetJfrogCertsDir()
 	if err != nil {
 		return "", err
 	}
 	client, err := httpclient.ClientBuilder().
-		SetCertificatesPath(securityDir).
+		SetCertificatesPath(certsPath).
 		SetInsecureTls(insecureTls).
 		SetClientCertPath(artifactoryAuth.GetClientCertPath()).
 		SetClientCertKeyPath(artifactoryAuth.GetClientCertKeyPath()).
@@ -83,7 +83,7 @@ func CreateServiceManager(artDetails *config.ArtifactoryDetails, isDryRun bool) 
 }
 
 func CreateServiceManagerWithThreads(artDetails *config.ArtifactoryDetails, isDryRun bool, threads int) (*artifactory.ArtifactoryServicesManager, error) {
-	certPath, err := cliutils.GetJfrogSecurityDir()
+	certsPath, err := cliutils.GetJfrogCertsDir()
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +92,8 @@ func CreateServiceManagerWithThreads(artDetails *config.ArtifactoryDetails, isDr
 		return nil, err
 	}
 	config := clientConfig.NewConfigBuilder().
-		SetArtDetails(artAuth).
-		SetCertificatesPath(certPath).
+		SetServiceDetails(artAuth).
+		SetCertificatesPath(certsPath).
 		SetInsecureTls(artDetails.InsecureTls).
 		SetDryRun(isDryRun)
 	if threads > 0 {
@@ -107,7 +107,7 @@ func CreateServiceManagerWithThreads(artDetails *config.ArtifactoryDetails, isDr
 }
 
 func CreateServiceManagerWithProgressBar(artDetails *config.ArtifactoryDetails, threads int, dryRun bool, progressBar io.Progress) (*artifactory.ArtifactoryServicesManager, error) {
-	certPath, err := cliutils.GetJfrogSecurityDir()
+	certsPath, err := cliutils.GetJfrogCertsDir()
 	if err != nil {
 		return nil, err
 	}
@@ -116,9 +116,9 @@ func CreateServiceManagerWithProgressBar(artDetails *config.ArtifactoryDetails, 
 		return nil, err
 	}
 	servicesConfig, err := clientConfig.NewConfigBuilder().
-		SetArtDetails(artAuth).
+		SetServiceDetails(artAuth).
 		SetDryRun(dryRun).
-		SetCertificatesPath(certPath).
+		SetCertificatesPath(certsPath).
 		SetInsecureTls(artDetails.InsecureTls).
 		SetThreads(threads).
 		Build()
@@ -130,7 +130,7 @@ func CreateServiceManagerWithProgressBar(artDetails *config.ArtifactoryDetails, 
 }
 
 func CreateDistributionServiceManager(artDetails *config.ArtifactoryDetails, isDryRun bool) (*distribution.DistributionServicesManager, error) {
-	certPath, err := cliutils.GetJfrogSecurityDir()
+	certsPath, err := cliutils.GetJfrogCertsDir()
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +139,8 @@ func CreateDistributionServiceManager(artDetails *config.ArtifactoryDetails, isD
 		return nil, err
 	}
 	serviceConfig, err := clientConfig.NewConfigBuilder().
-		SetArtDetails(distAuth).
-		SetCertificatesPath(certPath).
+		SetServiceDetails(distAuth).
+		SetCertificatesPath(certsPath).
 		SetInsecureTls(artDetails.InsecureTls).
 		SetDryRun(isDryRun).
 		Build()
@@ -150,7 +150,7 @@ func CreateDistributionServiceManager(artDetails *config.ArtifactoryDetails, isD
 	return distribution.New(&distAuth, serviceConfig)
 }
 
-func isRepoExists(repository string, artDetails auth.CommonDetails) (bool, error) {
+func isRepoExists(repository string, artDetails auth.ServiceDetails) (bool, error) {
 	artHttpDetails := artDetails.CreateHttpClientDetails()
 	client, err := httpclient.ClientBuilder().Build()
 	if err != nil {
@@ -167,7 +167,7 @@ func isRepoExists(repository string, artDetails auth.CommonDetails) (bool, error
 	return false, nil
 }
 
-func CheckIfRepoExists(repository string, artDetails auth.CommonDetails) error {
+func CheckIfRepoExists(repository string, artDetails auth.ServiceDetails) error {
 	repoExists, err := isRepoExists(repository, artDetails)
 	if err != nil {
 		return err

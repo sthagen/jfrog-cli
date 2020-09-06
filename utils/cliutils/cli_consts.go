@@ -2,7 +2,7 @@ package cliutils
 
 const (
 	// General CLI constants
-	CliVersion           = "1.35.3"
+	CliVersion           = "1.39.3"
 	ClientAgent          = "jfrog-cli-go"
 	OnErrorPanic OnError = "panic"
 
@@ -22,6 +22,18 @@ const (
 	Retries                     = 3
 	TokenRefreshDisabled        = 0
 	TokenRefreshDefaultInterval = 60
+	TokenExpiry                 = 3600
+	DefaultLicenseCount         = 1
+
+	// Home Dir
+	JfrogCertsDirName        = "certs"
+	JfrogConfigFile          = "jfrog-cli.conf"
+	JfrogDependenciesDirName = "dependencies"
+	JfrogSecurityDirName     = "security"
+	JfrogSecurityConfFile    = "security.yaml"
+	JfrogBackupDirName       = "backup"
+	JfrogLogsDirName         = "logs"
+	JfrogLockDirName         = "lock"
 
 	// Env
 	ReportUsage     = "JFROG_CLI_REPORT_USAGE"

@@ -15,6 +15,8 @@ import (
 
 // Internal golang locking for the same process.
 var mutex sync.Mutex
+
+// The serverId used for authentication. Use for reading and writing tokens from/to the config file, and for reading the credentials if needed.
 var tokenRefreshServerId string
 
 func AccessTokenRefreshPreRequestInterceptor(fields *auth.CommonConfigFields, httpClientDetails *httputils.HttpClientDetails) (err error) {
@@ -54,9 +56,12 @@ func tokenRefreshHandler(currentAccessToken string) (newAccessToken string, err 
 		return "", err
 	}
 
-	serverConfiguration, err := GetArtifactoryConf(tokenRefreshServerId)
+	serverConfiguration, err := GetArtifactorySpecificConfig(tokenRefreshServerId, true, false)
 	if err != nil {
-		return "", nil
+		return "", err
+	}
+	if tokenRefreshServerId == "" && serverConfiguration != nil {
+		tokenRefreshServerId = serverConfiguration.ServerId
 	}
 	// If token already refreshed, get new token from config
 	if serverConfiguration.AccessToken != "" && serverConfiguration.AccessToken != currentAccessToken {
@@ -143,7 +148,7 @@ func createTokensForConfig(artifactoryDetails *ArtifactoryDetails, expirySeconds
 	return newToken, nil
 }
 
-func CreateInitialRefreshTokensIfNeeded(artifactoryDetails *ArtifactoryDetails) (err error) {
+func CreateInitialRefreshableTokensIfNeeded(artifactoryDetails *ArtifactoryDetails) (err error) {
 	if !(artifactoryDetails.TokenRefreshInterval > 0 && artifactoryDetails.RefreshToken == "" && artifactoryDetails.AccessToken == "") {
 		return nil
 	}
@@ -159,7 +164,7 @@ func CreateInitialRefreshTokensIfNeeded(artifactoryDetails *ArtifactoryDetails) 
 	if err != nil {
 		return err
 	}
-	// remove initializing value
+	// Remove initializing value.
 	artifactoryDetails.TokenRefreshInterval = 0
 	return writeNewTokens(artifactoryDetails, artifactoryDetails.ServerId, newToken.AccessToken, newToken.RefreshToken)
 }
@@ -185,7 +190,7 @@ func refreshExpiredToken(artifactoryDetails *ArtifactoryDetails, currentAccessTo
 }
 
 func createTokensServiceManager(artDetails *ArtifactoryDetails) (*artifactory.ArtifactoryServicesManager, error) {
-	certPath, err := cliutils.GetJfrogSecurityDir()
+	certsPath, err := cliutils.GetJfrogCertsDir()
 	if err != nil {
 		return nil, err
 	}
@@ -194,8 +199,8 @@ func createTokensServiceManager(artDetails *ArtifactoryDetails) (*artifactory.Ar
 		return nil, err
 	}
 	serviceConfig, err := config.NewConfigBuilder().
-		SetArtDetails(artAuth).
-		SetCertificatesPath(certPath).
+		SetServiceDetails(artAuth).
+		SetCertificatesPath(certsPath).
 		SetInsecureTls(artDetails.InsecureTls).
 		SetDryRun(false).
 		Build()

@@ -2,9 +2,14 @@ package generic
 
 import (
 	"errors"
+	"github.com/jfrog/jfrog-cli/utils/cliutils"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/jfrog/jfrog-cli/artifactory/spec"
 	"github.com/jfrog/jfrog-cli/artifactory/utils"
-	"github.com/jfrog/jfrog-cli/utils/cliutils"
 	"github.com/jfrog/jfrog-cli/utils/progressbar"
 	"github.com/jfrog/jfrog-client-go/artifactory/buildinfo"
 	"github.com/jfrog/jfrog-client-go/artifactory/services"
@@ -12,10 +17,6 @@ import (
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
 	ioUtils "github.com/jfrog/jfrog-client-go/utils/io"
 	"github.com/jfrog/jfrog-client-go/utils/log"
-	"os"
-	"strconv"
-	"strings"
-	"time"
 )
 
 type UploadCommand struct {
@@ -61,8 +62,8 @@ func (uc *UploadCommand) upload() error {
 	// In case of sync-delete get the user to confirm first, and save the operation timestamp.
 	syncDeletesProp := ""
 	if !uc.DryRun() && uc.SyncDeletesPath() != "" {
-		if !uc.Quiet() && !cliutils.InteractiveConfirm("Sync-deletes may delete some artifacts in Artifactory. Are you sure you want to continue?\n"+
-			"You can avoid this confirmation message by adding --quiet to the command.") {
+		if !uc.Quiet() && !cliutils.AskYesNo("Sync-deletes may delete some artifacts in Artifactory. Are you sure you want to continue?\n"+
+			"You can avoid this confirmation message by adding --quiet to the command.", false) {
 			return nil
 		}
 		timestamp := strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10)
@@ -202,6 +203,7 @@ func getUploadParams(f *spec.File, configuration *utils.UploadConfiguration, add
 	uploadParams.Deb = configuration.Deb
 	uploadParams.Symlink = configuration.Symlink
 	uploadParams.MinChecksumDeploy = configuration.MinChecksumDeploySize
+	uploadParams.Retries = configuration.Retries
 	uploadParams.AddVcsProps = addVcsProps
 
 	uploadParams.Recursive, err = f.IsRecursive(true)
@@ -246,6 +248,7 @@ func (uc *UploadCommand) handleSyncDeletes(syncDeletesProp string) error {
 	if err != nil {
 		return err
 	}
+	defer resultItems.Close()
 	_, err = servicesManager.DeleteFiles(resultItems)
 	return err
 }

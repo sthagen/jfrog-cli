@@ -2,10 +2,13 @@ package commands
 
 import (
 	"encoding/json"
-	"github.com/jfrog/jfrog-cli/utils/config"
-	"github.com/jfrog/jfrog-cli/utils/log"
 	"strings"
 	"testing"
+
+	"github.com/jfrog/jfrog-cli/utils/cliutils"
+	"github.com/jfrog/jfrog-cli/utils/config"
+	"github.com/jfrog/jfrog-cli/utils/log"
+	"github.com/stretchr/testify/assert"
 )
 
 func init() {
@@ -21,6 +24,20 @@ func TestBasicAuth(t *testing.T) {
 		ServerId:  "test",
 		IsDefault: false}
 	configAndTest(t, &inputDetails)
+}
+
+func TestUsernameSavedLowercase(t *testing.T) {
+	inputDetails := config.ArtifactoryDetails{
+		Url:             "http://localhost:8080/artifactory",
+		DistributionUrl: "http://localhost:8080/distribution",
+		User:            "ADMIN", Password: "password",
+		ApiKey: "", SshKeyPath: "", AccessToken: "",
+		ServerId:  "test",
+		IsDefault: false}
+
+	outputConfig, err := configAndGetTestServer(t, &inputDetails, false)
+	assert.NoError(t, err)
+	assert.Equal(t, outputConfig.User, "admin", "The config command is supposed to save username as lowercase")
 }
 
 func TestApiKey(t *testing.T) {
@@ -99,23 +116,17 @@ func TestEmpty(t *testing.T) {
 }
 
 func configAndTest(t *testing.T, inputDetails *config.ArtifactoryDetails) {
-	configCmd := NewConfigCommand().SetDetails(inputDetails).SetServerId("test")
-	err := configCmd.Config()
-	if err != nil {
-		t.Error(err.Error())
-	}
-	outputConfig, err := GetConfig("test")
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if configStructToString(inputDetails) != configStructToString(outputConfig) {
-		t.Error("Unexpected configuration was saved to file. Expected: " + configStructToString(inputDetails) + " Got " + configStructToString(outputConfig))
-	}
-	err = DeleteConfig("test")
-	if err != nil {
-		t.Error(err.Error())
-	}
+	outputConfig, err := configAndGetTestServer(t, inputDetails, false)
+	assert.NoError(t, err)
+	assert.Equal(t, configStructToString(inputDetails), configStructToString(outputConfig), "unexpected configuration was saved to file")
+	assert.NoError(t, DeleteConfig("test"))
 	testExportImport(t, inputDetails)
+}
+
+func configAndGetTestServer(t *testing.T, inputDetails *config.ArtifactoryDetails, basicAuthOnly bool) (*config.ArtifactoryDetails, error) {
+	configCmd := NewConfigCommand().SetDetails(inputDetails).SetServerId("test").SetUseBasicAuthOnly(basicAuthOnly)
+	assert.NoError(t, configCmd.Config())
+	return GetConfig("test", false)
 }
 
 func configStructToString(artConfig *config.ArtifactoryDetails) string {
@@ -124,36 +135,43 @@ func configStructToString(artConfig *config.ArtifactoryDetails) string {
 	return string(marshaledStruct)
 }
 
-func TestGetConfigurationFromUser(t *testing.T) {
+func TestEscapingUrlInConfigurationFromUser(t *testing.T) {
 	inputDetails := config.ArtifactoryDetails{
 		Url:             "http://localhost:8080/artifactory",
 		DistributionUrl: "http://localhost:8080/distribution",
 		User:            "admin", Password: "password",
 		ApiKey: "", SshKeyPath: "", AccessToken: "",
-		ServerId:  "test",
+		ServerId: "test", ClientCertPath: "test/cert/path", ClientCertKeyPath: "test/cert/key/path",
 		IsDefault: false}
 
-	configCmd := NewConfigCommand().SetDetails(&inputDetails).SetDefaultDetails(&inputDetails)
-	err := configCmd.getConfigurationFromUser()
-	if err != nil {
-		t.Error(err)
-	}
+	configCmd := NewConfigCommand().SetDetails(&inputDetails).SetDefaultDetails(&inputDetails).SetUseBasicAuthOnly(true)
+	assert.NoError(t, configCmd.getConfigurationFromUser())
+	assert.True(t, strings.HasSuffix(inputDetails.GetUrl(), "/"), "expected url to end with /")
+}
 
-	if !strings.HasSuffix(inputDetails.GetUrl(), "/") {
-		t.Error("Expected url to end with /")
-	}
+func TestBasicAuthOnlyOption(t *testing.T) {
+	inputDetails := config.ArtifactoryDetails{
+		Url:  "http://localhost:8080/artifactory",
+		User: "admin", Password: "password",
+		ServerId: "test", IsDefault: false}
+
+	// Verify setting the option disables refreshable tokens.
+	outputConfig, err := configAndGetTestServer(t, &inputDetails, true)
+	assert.NoError(t, err)
+	assert.Equal(t, cliutils.TokenRefreshDisabled, outputConfig.TokenRefreshInterval, "expected refreshable token to be disabled")
+	assert.NoError(t, DeleteConfig("test"))
+
+	// Verify setting the option enables refreshable tokens.
+	outputConfig, err = configAndGetTestServer(t, &inputDetails, false)
+	assert.NoError(t, err)
+	assert.Equal(t, cliutils.TokenRefreshDefaultInterval, outputConfig.TokenRefreshInterval, "expected refreshable token to be enabled")
+	assert.NoError(t, DeleteConfig("test"))
 }
 
 func testExportImport(t *testing.T, inputDetails *config.ArtifactoryDetails) {
 	serverToken, err := config.Export(inputDetails)
-	if err != nil {
-		t.Error(err.Error())
-	}
+	assert.NoError(t, err)
 	outputDetails, err := config.Import(serverToken)
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if configStructToString(inputDetails) != configStructToString(outputDetails) {
-		t.Error("Unexpected configuration was saved to file. Expected: " + configStructToString(inputDetails) + " Got " + configStructToString(outputDetails))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, configStructToString(inputDetails), configStructToString(outputDetails), "unexpected configuration was saved to file")
 }

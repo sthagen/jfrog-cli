@@ -2,6 +2,8 @@ package replication
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 
 	"github.com/jfrog/jfrog-cli/artifactory/commands/utils"
 	rtUtils "github.com/jfrog/jfrog-cli/artifactory/utils"
@@ -65,6 +67,9 @@ func (rcc *ReplicationCreateCommand) Run() (err error) {
 	// Go over the the confMap and write the values with the correct type using the writersMap
 	serverId := ""
 	for key, value := range replicationConfigMap {
+		if err = utils.ValidateMapEntry(key, value, writersMap); err != nil {
+			return
+		}
 		if key == "serverId" {
 			serverId = value.(string)
 		} else {
@@ -83,8 +88,18 @@ func (rcc *ReplicationCreateCommand) Run() (err error) {
 		return
 	}
 	servicesManager, err := rtUtils.CreateServiceManager(rcc.rtDetails, false)
+	if err != nil {
+		return err
+	}
+	// In case 'serverId' is not found, pull replication will be assumed.
 	if serverId != "" {
-		updateArtifactoryInfo(&params, serverId)
+		if targetRepo, ok := replicationConfigMap["targetRepoKey"]; ok {
+			if err = updateArtifactoryInfo(&params, serverId, targetRepo.(string)); err != nil {
+				return err
+			}
+		} else {
+			return errorutils.CheckError(errors.New("expected 'targetRepoKey' field in the json template file."))
+		}
 	}
 	return servicesManager.CreateReplication(params)
 }
@@ -98,18 +113,19 @@ func fillMissingDefaultValue(replicationConfigMap map[string]interface{}) {
 	}
 }
 
-func updateArtifactoryInfo(param *services.CreateReplicationParams, serverId string) error {
-	singleConfig, err := config.GetArtifactorySpecificConfig(serverId)
+func updateArtifactoryInfo(param *services.CreateReplicationParams, serverId, targetRepo string) error {
+	singleConfig, err := config.GetArtifactorySpecificConfig(serverId, true, false)
 	if err != nil {
 		return err
 	}
-	param.Url, param.Password, param.Username = singleConfig.GetUrl(), singleConfig.GetPassword(), singleConfig.GetUser()
+	param.Url, param.Password, param.Username = strings.TrimSuffix(singleConfig.GetUrl(), "/")+"/"+targetRepo, singleConfig.GetPassword(), singleConfig.GetUser()
 	return nil
 }
 
 var writersMap = map[string]utils.AnswerWriter{
 	ServerId:               utils.WriteStringAnswer,
 	RepoKey:                utils.WriteStringAnswer,
+	TargetRepoKey:          utils.WriteStringAnswer,
 	CronExp:                utils.WriteStringAnswer,
 	EnableEventReplication: utils.WriteBoolAnswer,
 	Enabled:                utils.WriteBoolAnswer,

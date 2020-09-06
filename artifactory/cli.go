@@ -1,9 +1,17 @@
 package artifactory
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/dotnet"
+	"github.com/jfrog/jfrog-cli/artifactory/commands/permissiontarget"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/accesstokencreate"
+	dotnetdocs "github.com/jfrog/jfrog-cli/docs/artifactory/dotnet"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/dotnetconfig"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/permissiontargetcreate"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/permissiontargetdelete"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/permissiontargettemplate"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/permissiontargetupdate"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -21,7 +29,6 @@ import (
 	"github.com/jfrog/jfrog-cli/artifactory/commands/gradle"
 	"github.com/jfrog/jfrog-cli/artifactory/commands/mvn"
 	"github.com/jfrog/jfrog-cli/artifactory/commands/npm"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/nuget"
 	"github.com/jfrog/jfrog-cli/artifactory/commands/pip"
 	"github.com/jfrog/jfrog-cli/artifactory/commands/replication"
 	"github.com/jfrog/jfrog-cli/artifactory/commands/repository"
@@ -29,7 +36,6 @@ import (
 	"github.com/jfrog/jfrog-cli/artifactory/spec"
 	"github.com/jfrog/jfrog-cli/artifactory/utils"
 	npmUtils "github.com/jfrog/jfrog-cli/artifactory/utils/npm"
-	piputils "github.com/jfrog/jfrog-cli/artifactory/utils/pip"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/buildadddependencies"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/buildaddgit"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/buildclean"
@@ -44,6 +50,7 @@ import (
 	curldocs "github.com/jfrog/jfrog-cli/docs/artifactory/curl"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/delete"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/deleteprops"
+	"github.com/jfrog/jfrog-cli/docs/artifactory/dockerpromote"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/dockerpull"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/dockerpush"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/download"
@@ -101,7 +108,7 @@ func GetCommands() []cli.Command {
 	return []cli.Command{
 		{
 			Name:         "config",
-			Flags:        getConfigFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.Config),
 			Aliases:      []string{"c"},
 			Usage:        configdocs.Description,
 			HelpName:     common.CreateUsage("rt config", configdocs.Description, configdocs.Usage),
@@ -125,7 +132,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "upload",
-			Flags:        getUploadFlags(),
+			Flags:        cliutils.GetCommandFlags("upload"), //(cliutils.Upload),
 			Aliases:      []string{"u"},
 			Usage:        upload.Description,
 			HelpName:     common.CreateUsage("rt upload", upload.Description, upload.Usage),
@@ -138,7 +145,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "download",
-			Flags:        getDownloadFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.Download),
 			Aliases:      []string{"dl"},
 			Usage:        download.Description,
 			HelpName:     common.CreateUsage("rt download", download.Description, download.Usage),
@@ -151,7 +158,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "move",
-			Flags:        getMoveFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.Move),
 			Aliases:      []string{"mv"},
 			Usage:        move.Description,
 			HelpName:     common.CreateUsage("rt move", move.Description, move.Usage),
@@ -164,7 +171,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "copy",
-			Flags:        getCopyFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.Copy),
 			Aliases:      []string{"cp"},
 			Usage:        copydocs.Description,
 			HelpName:     common.CreateUsage("rt copy", copydocs.Description, copydocs.Usage),
@@ -177,7 +184,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "delete",
-			Flags:        getDeleteFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.Delete),
 			Aliases:      []string{"del"},
 			Usage:        delete.Description,
 			HelpName:     common.CreateUsage("rt delete", delete.Description, delete.Usage),
@@ -190,7 +197,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "search",
-			Flags:        getSearchFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.Search),
 			Aliases:      []string{"s"},
 			Usage:        search.Description,
 			HelpName:     common.CreateUsage("rt search", search.Description, search.Usage),
@@ -203,7 +210,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "set-props",
-			Flags:        getSetOrDeletePropsFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.Properties),
 			Aliases:      []string{"sp"},
 			Usage:        setprops.Description,
 			HelpName:     common.CreateUsage("rt set-props", setprops.Description, setprops.Usage),
@@ -216,7 +223,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "delete-props",
-			Flags:        getSetOrDeletePropsFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.Properties),
 			Aliases:      []string{"delp"},
 			Usage:        deleteprops.Description,
 			HelpName:     common.CreateUsage("rt delete-props", deleteprops.Description, deleteprops.Usage),
@@ -229,7 +236,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "build-publish",
-			Flags:        getBuildPublishFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.BuildPublish),
 			Aliases:      []string{"bp"},
 			Usage:        buildpublish.Description,
 			HelpName:     common.CreateUsage("rt build-publish", buildpublish.Description, buildpublish.Usage),
@@ -254,7 +261,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "build-add-dependencies",
-			Flags:        getBuildAddDependenciesFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.BuildAddDependencies),
 			Aliases:      []string{"bad"},
 			Usage:        buildadddependencies.Description,
 			HelpName:     common.CreateUsage("rt build-add-dependencies", buildadddependencies.Description, buildadddependencies.Usage),
@@ -267,7 +274,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "build-add-git",
-			Flags:        getBuildAddGitFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.BuildAddGit),
 			Aliases:      []string{"bag"},
 			Usage:        buildaddgit.Description,
 			HelpName:     common.CreateUsage("rt build-add-git", buildaddgit.Description, buildaddgit.Usage),
@@ -280,7 +287,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "build-scan",
-			Flags:        getBuildScanFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.BuildScan),
 			Aliases:      []string{"bs"},
 			Usage:        buildscan.Description,
 			HelpName:     common.CreateUsage("rt build-scan", buildscan.Description, buildscan.Usage),
@@ -305,7 +312,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "build-promote",
-			Flags:        getBuildPromotionFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.BuildPromote),
 			Aliases:      []string{"bpr"},
 			Usage:        buildpromote.Description,
 			HelpName:     common.CreateUsage("rt build-promote", buildpromote.Description, buildpromote.Usage),
@@ -318,7 +325,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "build-distribute",
-			Flags:        getBuildDistributeFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.BuildDistribute),
 			Aliases:      []string{"bd"},
 			Usage:        builddistribute.Description,
 			HelpName:     common.CreateUsage("rt build-distribute", builddistribute.Description, builddistribute.Usage),
@@ -331,7 +338,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "build-discard",
-			Flags:        getBuildDiscardFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.BuildDiscard),
 			Aliases:      []string{"bdi"},
 			Usage:        builddiscard.Description,
 			HelpName:     common.CreateUsage("rt build-discard", builddiscard.Description, builddiscard.Usage),
@@ -344,7 +351,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "git-lfs-clean",
-			Flags:        getGitLfsCleanFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.GitLfsClean),
 			Aliases:      []string{"glc"},
 			Usage:        gitlfsclean.Description,
 			HelpName:     common.CreateUsage("rt git-lfs-clean", gitlfsclean.Description, gitlfsclean.Usage),
@@ -358,7 +365,7 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "mvn-config",
 			Aliases:      []string{"mvnc"},
-			Flags:        getMavenConfigFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.MvnConfig),
 			Usage:        mvnconfig.Description,
 			HelpName:     common.CreateUsage("rt mvn-config", mvnconfig.Description, mvnconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
@@ -369,7 +376,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:            "mvn",
-			Flags:           getMavenFlags(),
+			Flags:           cliutils.GetCommandFlags(cliutils.Mvn),
 			Usage:           mvndoc.Description,
 			HelpName:        common.CreateUsage("rt mvn", mvndoc.Description, mvndoc.Usage),
 			UsageText:       mvndoc.Arguments,
@@ -383,7 +390,7 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "gradle-config",
 			Aliases:      []string{"gradlec"},
-			Flags:        getGradleConfigFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.GradleConfig),
 			Usage:        gradleconfig.Description,
 			HelpName:     common.CreateUsage("rt gradle-config", gradleconfig.Description, gradleconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
@@ -394,7 +401,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:            "gradle",
-			Flags:           getGradleFlags(),
+			Flags:           cliutils.GetCommandFlags(cliutils.Gradle),
 			Usage:           gradledoc.Description,
 			HelpName:        common.CreateUsage("rt gradle", gradledoc.Description, gradledoc.Usage),
 			UsageText:       gradledoc.Arguments,
@@ -406,8 +413,21 @@ func GetCommands() []cli.Command {
 			},
 		},
 		{
+			Name:         "docker-promote",
+			Flags:        cliutils.GetCommandFlags(cliutils.DockerPromote),
+			Aliases:      []string{"dpr"},
+			Usage:        dockerpromote.Description,
+			HelpName:     common.CreateUsage("rt docker-promote", dockerpromote.Description, dockerpromote.Usage),
+			UsageText:    dockerpromote.Arguments,
+			ArgsUsage:    common.CreateEnvVars(),
+			BashComplete: common.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return dockerPromoteCmd(c)
+			},
+		},
+		{
 			Name:         "docker-push",
-			Flags:        getDockerPushFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.DockerPush),
 			Aliases:      []string{"dp"},
 			Usage:        dockerpush.Description,
 			HelpName:     common.CreateUsage("rt docker-push", dockerpush.Description, dockerpush.Usage),
@@ -420,7 +440,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "docker-pull",
-			Flags:        getDockerPullFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.DockerPull),
 			Aliases:      []string{"dpl"},
 			Usage:        dockerpull.Description,
 			HelpName:     common.CreateUsage("rt docker-pull", dockerpull.Description, dockerpull.Usage),
@@ -433,9 +453,9 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "npm-config",
-			Flags:        getCommonBuildToolsConfigFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.NpmConfig),
 			Aliases:      []string{"npmc"},
-			Usage:        goconfig.Description,
+			Usage:        npmconfig.Description,
 			HelpName:     common.CreateUsage("rt npm-config", npmconfig.Description, npmconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
 			BashComplete: common.CreateBashCompletionFunc(),
@@ -445,33 +465,35 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:            "npm-install",
-			Flags:           getNpmFlags(),
+			Flags:           cliutils.GetCommandFlags(cliutils.Npm),
 			Aliases:         []string{"npmi"},
 			Usage:           npminstall.Description,
 			HelpName:        common.CreateUsage("rt npm-install", npminstall.Description, npminstall.Usage),
+			UsageText:       npminstall.Arguments,
 			ArgsUsage:       common.CreateEnvVars(),
 			SkipFlagParsing: shouldSkipNpmFlagParsing(),
 			BashComplete:    common.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
-				return npmInstallCmd(c, npm.NewNpmInstallCommand(), npmLegacyInstallCmd)
+				return npmInstallOrCiCmd(c, npm.NewNpmInstallCommand(), npmLegacyInstallCmd)
 			},
 		},
 		{
 			Name:            "npm-ci",
-			Flags:           getNpmFlags(),
+			Flags:           cliutils.GetCommandFlags(cliutils.Npm),
 			Aliases:         []string{"npmci"},
 			Usage:           npmci.Description,
-			HelpName:        common.CreateUsage("rt npm-ci", npmci.Description, npminstall.Usage),
+			HelpName:        common.CreateUsage("rt npm-ci", npmci.Description, npmci.Usage),
+			UsageText:       npmci.Arguments,
 			ArgsUsage:       common.CreateEnvVars(),
 			SkipFlagParsing: shouldSkipNpmFlagParsing(),
 			BashComplete:    common.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
-				return npmInstallCmd(c, npm.NewNpmCiCommand(), npmLegacyCiCmd)
+				return npmInstallOrCiCmd(c, npm.NewNpmCiCommand(), npmLegacyCiCmd)
 			},
 		},
 		{
 			Name:            "npm-publish",
-			Flags:           getNpmCommonFlags(),
+			Flags:           cliutils.GetCommandFlags(cliutils.NpmPublish),
 			Aliases:         []string{"npmp"},
 			Usage:           npmpublish.Description,
 			HelpName:        common.CreateUsage("rt npm-publish", npmpublish.Description, npmpublish.Usage),
@@ -484,9 +506,9 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "nuget-config",
-			Flags:        getCommonBuildToolsConfigFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.NugetConfig),
 			Aliases:      []string{"nugetc"},
-			Usage:        goconfig.Description,
+			Usage:        nugetconfig.Description,
 			HelpName:     common.CreateUsage("rt nuget-config", nugetconfig.Description, nugetconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
 			BashComplete: common.CreateBashCompletionFunc(),
@@ -496,7 +518,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:            "nuget",
-			Flags:           getNugetFlags(),
+			Flags:           cliutils.GetCommandFlags(cliutils.Nuget),
 			Usage:           nugetdocs.Description,
 			HelpName:        common.CreateUsage("rt nuget", nugetdocs.Description, nugetdocs.Usage),
 			UsageText:       nugetdocs.Arguments,
@@ -520,8 +542,33 @@ func GetCommands() []cli.Command {
 			},
 		},
 		{
+			Name:         "dotnet-config",
+			Flags:        cliutils.GetCommandFlags(cliutils.DotnetConfig),
+			Aliases:      []string{"dotnetc"},
+			Usage:        dotnetconfig.Description,
+			HelpName:     common.CreateUsage("rt dotnet-config", dotnetconfig.Description, dotnetconfig.Usage),
+			ArgsUsage:    common.CreateEnvVars(),
+			BashComplete: common.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return createDotnetConfigCmd(c)
+			},
+		},
+		{
+			Name:            "dotnet",
+			Flags:           cliutils.GetCommandFlags(cliutils.Dotnet),
+			Usage:           dotnetdocs.Description,
+			HelpName:        common.CreateUsage("rt dotnet", dotnetdocs.Description, dotnetdocs.Usage),
+			UsageText:       dotnetdocs.Arguments,
+			ArgsUsage:       common.CreateEnvVars(),
+			SkipFlagParsing: true,
+			BashComplete:    common.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return dotnetCmd(c)
+			},
+		},
+		{
 			Name:         "go-config",
-			Flags:        getCommonBuildToolsConfigFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.GoConfig),
 			Usage:        goconfig.Description,
 			HelpName:     common.CreateUsage("rt go-config", goconfig.Description, goconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
@@ -532,7 +579,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "go-publish",
-			Flags:        getGoPublishFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.GoPublish),
 			Aliases:      []string{"gp"},
 			Usage:        gopublish.Description,
 			HelpName:     common.CreateUsage("rt go-publish", gopublish.Description, gopublish.Usage),
@@ -545,7 +592,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:            "go",
-			Flags:           getGoAndBuildToolFlags(),
+			Flags:           cliutils.GetCommandFlags(cliutils.Go),
 			Aliases:         []string{"go"},
 			Usage:           gocommand.Description,
 			HelpName:        common.CreateUsage("rt go", gocommand.Description, gocommand.Usage),
@@ -559,7 +606,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "go-recursive-publish",
-			Flags:        getGoRecursivePublishFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.GoRecursivePublish),
 			Aliases:      []string{"grp"},
 			Usage:        gorecursivepublish.Description,
 			HelpName:     common.CreateUsage("rt grp", gorecursivepublish.Description, gorecursivepublish.Usage),
@@ -572,7 +619,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "ping",
-			Flags:        getPingFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.Ping),
 			Aliases:      []string{"p"},
 			Usage:        ping.Description,
 			HelpName:     common.CreateUsage("rt ping", ping.Description, ping.Usage),
@@ -585,7 +632,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:            "curl",
-			Flags:           getCurlFlags(),
+			Flags:           cliutils.GetCommandFlags(cliutils.Curl),
 			Aliases:         []string{"cl"},
 			Usage:           curldocs.Description,
 			HelpName:        common.CreateUsage("rt curl", curldocs.Description, curldocs.Usage),
@@ -599,7 +646,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "pip-config",
-			Flags:        getCommonBuildToolsConfigFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.PipConfig),
 			Aliases:      []string{"pipc"},
 			Usage:        pipconfig.Description,
 			HelpName:     common.CreateUsage("rt pipc", pipconfig.Description, pipconfig.Usage),
@@ -611,7 +658,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:            "pip-install",
-			Flags:           getPipInstallFlags(),
+			Flags:           cliutils.GetCommandFlags(cliutils.PipInstall),
 			Aliases:         []string{"pipi"},
 			Usage:           pipinstall.Description,
 			HelpName:        common.CreateUsage("rt pipi", pipinstall.Description, pipinstall.Usage),
@@ -625,7 +672,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "release-bundle-create",
-			Flags:        getReleaseBundleCreateUpdateFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleCreate),
 			Aliases:      []string{"rbc"},
 			Usage:        releasebundlecreate.Description,
 			HelpName:     common.CreateUsage("rt rbc", releasebundlecreate.Description, releasebundlecreate.Usage),
@@ -638,7 +685,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "release-bundle-update",
-			Flags:        getReleaseBundleCreateUpdateFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleUpdate),
 			Aliases:      []string{"rbu"},
 			Usage:        releasebundleupdate.Description,
 			HelpName:     common.CreateUsage("rt rbu", releasebundleupdate.Description, releasebundleupdate.Usage),
@@ -651,7 +698,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "release-bundle-sign",
-			Flags:        getReleaseBundleSignFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleSign),
 			Aliases:      []string{"rbs"},
 			Usage:        releasebundlesign.Description,
 			HelpName:     common.CreateUsage("rt rbs", releasebundlesign.Description, releasebundlesign.Usage),
@@ -664,7 +711,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "release-bundle-distribute",
-			Flags:        getReleaseBundleDistributeFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleDistribute),
 			Aliases:      []string{"rbd"},
 			Usage:        releasebundledistribute.Description,
 			HelpName:     common.CreateUsage("rt rbd", releasebundledistribute.Description, releasebundledistribute.Usage),
@@ -677,7 +724,7 @@ func GetCommands() []cli.Command {
 		},
 		{
 			Name:         "release-bundle-delete",
-			Flags:        getReleaseBundleDeleteFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleDelete),
 			Aliases:      []string{"rbdel"},
 			Usage:        releasebundledelete.Description,
 			HelpName:     common.CreateUsage("rt rbdel", releasebundledelete.Description, releasebundledelete.Usage),
@@ -689,14 +736,13 @@ func GetCommands() []cli.Command {
 			},
 		},
 		{
-			Name:            "repo-template",
-			Aliases:         []string{"rpt"},
-			Usage:           repotemplate.Description,
-			HelpName:        common.CreateUsage("rt rpt", repotemplate.Description, repotemplate.Usage),
-			UsageText:       repotemplate.Arguments,
-			ArgsUsage:       common.CreateEnvVars(),
-			SkipFlagParsing: true,
-			BashComplete:    common.CreateBashCompletionFunc(),
+			Name:         "repo-template",
+			Aliases:      []string{"rpt"},
+			Usage:        repotemplate.Description,
+			HelpName:     common.CreateUsage("rt rpt", repotemplate.Description, repotemplate.Usage),
+			UsageText:    repotemplate.Arguments,
+			ArgsUsage:    common.CreateEnvVars(),
+			BashComplete: common.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return repoTemplateCmd(c)
 			},
@@ -704,7 +750,7 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "repo-create",
 			Aliases:      []string{"rc"},
-			Flags:        getTemplateUsersFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        repocreate.Description,
 			HelpName:     common.CreateUsage("rt rc", repocreate.Description, repocreate.Usage),
 			UsageText:    repocreate.Arguments,
@@ -717,7 +763,7 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "repo-update",
 			Aliases:      []string{"ru"},
-			Flags:        getTemplateUsersFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        repoupdate.Description,
 			HelpName:     common.CreateUsage("rt ru", repoupdate.Description, repoupdate.Usage),
 			UsageText:    repoupdate.Arguments,
@@ -730,9 +776,9 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "repo-delete",
 			Aliases:      []string{"rdel"},
-			Flags:        getRepoDeleteFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.RepoDelete),
 			Usage:        repodelete.Description,
-			HelpName:     common.CreateUsage("rt rd", repodelete.Description, repodelete.Usage),
+			HelpName:     common.CreateUsage("rt rdel", repodelete.Description, repodelete.Usage),
 			UsageText:    repodelete.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
 			BashComplete: common.CreateBashCompletionFunc(),
@@ -743,7 +789,7 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "replication-template",
 			Aliases:      []string{"rplt"},
-			Flags:        getTemplateUsersFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        replicationtemplate.Description,
 			HelpName:     common.CreateUsage("rt rplt", replicationtemplate.Description, replicationtemplate.Usage),
 			UsageText:    replicationtemplate.Arguments,
@@ -756,7 +802,7 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "replication-create",
 			Aliases:      []string{"rplc"},
-			Flags:        getTemplateUsersFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        replicationcreate.Description,
 			HelpName:     common.CreateUsage("rt rplc", replicationcreate.Description, replicationcreate.Usage),
 			UsageText:    replicationcreate.Arguments,
@@ -769,7 +815,7 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "replication-delete",
 			Aliases:      []string{"rpldel"},
-			Flags:        getReplicationDeleteFlags(),
+			Flags:        cliutils.GetCommandFlags(cliutils.ReplicationDelete),
 			Usage:        replicationdelete.Description,
 			HelpName:     common.CreateUsage("rt rpldel", replicationdelete.Description, replicationdelete.Usage),
 			UsageText:    replicationdelete.Arguments,
@@ -779,1022 +825,75 @@ func GetCommands() []cli.Command {
 				return replicationDeleteCmd(c)
 			},
 		},
-	}
-}
-
-func getBaseBuildToolsConfigFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.BoolFlag{
-			Name:  commandUtils.Global,
-			Usage: "[Default: false] Set to true if you'd like the configuration to be global (for all projects). Specific projects can override the global configuration.` `",
+		{
+			Name:         "permission-target-template",
+			Aliases:      []string{"ptt"},
+			Usage:        permissiontargettemplate.Description,
+			HelpName:     common.CreateUsage("rt ptt", permissiontargettemplate.Description, permissiontargettemplate.Usage),
+			UsageText:    permissiontargettemplate.Arguments,
+			ArgsUsage:    common.CreateEnvVars(),
+			BashComplete: common.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return permissionTargrtTemplateCmd(c)
+			},
 		},
-		cli.StringFlag{
-			Name:  commandUtils.ResolutionServerId,
-			Usage: "[Optional] Artifactory server ID for resolution. The server should configured using the 'jfrog rt c' command.` `",
+		{
+			Name:         "permission-target-create",
+			Aliases:      []string{"ptc"},
+			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
+			Usage:        permissiontargetcreate.Description,
+			HelpName:     common.CreateUsage("rt ptc", permissiontargetcreate.Description, permissiontargetcreate.Usage),
+			UsageText:    permissiontargetcreate.Arguments,
+			ArgsUsage:    common.CreateEnvVars(),
+			BashComplete: common.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return permissionTargetCreateCmd(c)
+			},
 		},
-		cli.StringFlag{
-			Name:  commandUtils.DeploymentServerId,
-			Usage: "[Optional] Artifactory server ID for deployment. The server should configured using the 'jfrog rt c' command.` `",
+		{
+			Name:         "permission-target-update",
+			Aliases:      []string{"ptu"},
+			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
+			Usage:        permissiontargetupdate.Description,
+			HelpName:     common.CreateUsage("rt ptu", permissiontargetupdate.Description, permissiontargetupdate.Usage),
+			UsageText:    permissiontargetupdate.Arguments,
+			ArgsUsage:    common.CreateEnvVars(),
+			BashComplete: common.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return permissionTargetUpdateCmd(c)
+			},
 		},
-	}
-}
-
-func getCommonBuildToolsConfigFlags() []cli.Flag {
-	return append(getBaseBuildToolsConfigFlags(),
-		cli.StringFlag{
-			Name:  commandUtils.ResolutionRepo,
-			Usage: "[Optional] Repository for dependencies resolution.` `",
+		{
+			Name:         "permission-target-delete",
+			Aliases:      []string{"ptdel"},
+			Flags:        cliutils.GetCommandFlags(cliutils.PermissionTargetDelete),
+			Usage:        permissiontargetdelete.Description,
+			HelpName:     common.CreateUsage("rt ptdel", permissiontargetdelete.Description, permissiontargetdelete.Usage),
+			UsageText:    permissiontargetdelete.Arguments,
+			ArgsUsage:    common.CreateEnvVars(),
+			BashComplete: common.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return permissionTargetDeleteCmd(c)
+			},
 		},
-		cli.StringFlag{
-			Name:  commandUtils.DeploymentRepo,
-			Usage: "[Optional] Repository for artifacts deployment.` `",
-		},
-	)
-}
-
-func getMavenConfigFlags() []cli.Flag {
-	return append(getBaseBuildToolsConfigFlags(),
-		cli.StringFlag{
-			Name:  commandUtils.ResolutionReleasesRepo,
-			Usage: "[Optional] Resolution repository for release dependencies.` `",
-		},
-		cli.StringFlag{
-			Name:  commandUtils.ResolutionSnapshotsRepo,
-			Usage: "[Optional] Resolution repository for snapshot dependencies.` `",
-		},
-		cli.StringFlag{
-			Name:  commandUtils.DeploymentReleasesRepo,
-			Usage: "[Optional] Deployment repository for release artifacts.` `",
-		},
-		cli.StringFlag{
-			Name:  commandUtils.DeploymentSnapshotsRepo,
-			Usage: "[Optional] Deployment repository for snapshot artifacts.` `",
-		},
-	)
-}
-
-func getGradleConfigFlags() []cli.Flag {
-	return append(getCommonBuildToolsConfigFlags(),
-		cli.BoolFlag{
-			Name:  commandUtils.UsesPlugin,
-			Usage: "[Default: false] Set to true if the Gradle Artifactory Plugin is already applied in the build script.` `",
-		},
-		cli.BoolFlag{
-			Name:  commandUtils.UseWrapper,
-			Usage: "[Default: false] Set to true if you'd like to use the Gradle wrapper.` `",
-		},
-		cli.BoolTFlag{
-			Name:  commandUtils.DeployMavenDesc,
-			Usage: "[Default: true] Set to false if you do not wish to deploy Maven descriptors.` `",
-		},
-		cli.BoolTFlag{
-			Name:  commandUtils.DeployIvyDesc,
-			Usage: "[Default: true] Set to false if you do not wish to deploy Ivy descriptors.` `",
-		},
-		cli.StringFlag{
-			Name:  commandUtils.IvyDescPattern,
-			Usage: "[Default: '[organization]/[module]/ivy-[revision].xml' Set the deployed Ivy descriptor pattern.` `",
-		},
-		cli.StringFlag{
-			Name:  commandUtils.IvyArtifactsPattern,
-			Usage: "[Default: '[organization]/[module]/[revision]/[artifact]-[revision](-[classifier]).[ext]' Set the deployed Ivy artifacts pattern.` `",
-		},
-	)
-}
-
-func getUrlFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
-			Name:  "url",
-			Usage: "[Optional] Artifactory URL.` `",
-		},
-		cli.StringFlag{
-			Name:  "dist-url",
-			Usage: "[Optional] Distribution URL.` `",
+		{
+			Name:         "access-token-create",
+			Aliases:      []string{"atc"},
+			Flags:        cliutils.GetCommandFlags(cliutils.AccessTokenCreate),
+			Usage:        accesstokencreate.Description,
+			HelpName:     common.CreateUsage("rt atc", accesstokencreate.Description, accesstokencreate.Usage),
+			UsageText:    accesstokencreate.Arguments,
+			ArgsUsage:    common.CreateEnvVars(),
+			BashComplete: common.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return accessTokenCreateCmd(c)
+			},
 		},
 	}
-}
-
-func getBaseFlags() []cli.Flag {
-	return append(getUrlFlags(),
-		cli.StringFlag{
-			Name:  "user",
-			Usage: "[Optional] Artifactory username.` `",
-		},
-		cli.StringFlag{
-			Name:  "password",
-			Usage: "[Optional] Artifactory password.` `",
-		},
-		cli.StringFlag{
-			Name:  "apikey",
-			Usage: "[Optional] Artifactory API key.` `",
-		},
-		cli.StringFlag{
-			Name:  "access-token",
-			Usage: "[Optional] Artifactory access token.` `",
-		})
-}
-
-func getInsecureTlsFlag() cli.Flag {
-	return cli.BoolFlag{
-		Name:  "insecure-tls",
-		Usage: "[Default: false] Set to true to skip TLS certificates verification.` `",
-	}
-}
-
-func getClientCertsFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
-			Name:  "client-cert-path",
-			Usage: "[Optional] Client certificate file in PEM format.` `",
-		},
-		cli.StringFlag{
-			Name:  "client-cert-key-path",
-			Usage: "[Optional] Private key file for the client certificate in PEM format.` `",
-		},
-	}
-}
-
-func getCommonFlags() []cli.Flag {
-	flags := append(getBaseFlags(),
-		cli.StringFlag{
-			Name:  "ssh-passphrase",
-			Usage: "[Optional] SSH key passphrase.` `",
-		})
-	return append(flags, getSshKeyPathFlag()...)
-}
-
-func getServerFlags() []cli.Flag {
-	return append(getCommonFlags(), getServerIdFlag())
-}
-
-func getServerWithClientCertsFlags() []cli.Flag {
-	return append(getServerFlags(), getClientCertsFlags()...)
-}
-
-func getPingFlags() []cli.Flag {
-	return append(getServerWithClientCertsFlags(), getInsecureTlsFlag())
-}
-
-func getSortLimitFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
-			Name:  "sort-by",
-			Usage: "[Optional] A list of semicolon-separated fields to sort by. The fields must be part of the 'items' AQL domain. For more information, see https://www.jfrog.com/confluence/display/RTF/Artifactory+Query+Language#ArtifactoryQueryLanguage-EntitiesandFields` `",
-		},
-		cli.StringFlag{
-			Name:  "sort-order",
-			Usage: "[Default: asc] The order by which fields in the 'sort-by' option should be sorted. Accepts 'asc' or 'desc'.` `",
-		},
-		cli.StringFlag{
-			Name:  "limit",
-			Usage: "[Optional] The maximum number of items to fetch. Usually used with the 'sort-by' option.` `",
-		},
-		cli.StringFlag{
-			Name:  "offset",
-			Usage: "[Optional] The offset from which to fetch items (i.e. how many items should be skipped). Usually used with the 'sort-by' option.` `",
-		},
-	}
-}
-
-func getUploadFlags() []cli.Flag {
-	uploadFlags := append(getServerWithClientCertsFlags(), getSpecFlags()...)
-	uploadFlags = append(uploadFlags, getBuildAndModuleFlags()...)
-	uploadFlags = append(uploadFlags, getUploadExclusionsFlags()...)
-	return append(uploadFlags, []cli.Flag{
-		cli.StringFlag{
-			Name:  "deb",
-			Usage: "[Optional] Used for Debian packages in the form of distribution/component/architecture. If the value for distribution, component or architecture includes a slash, the slash should be escaped with a back-slash.` `",
-		},
-		cli.BoolTFlag{
-			Name:  "recursive",
-			Usage: "[Default: true] Set to false if you do not wish to collect artifacts in sub-folders to be uploaded to Artifactory.` `",
-		},
-		cli.BoolTFlag{
-			Name:  "flat",
-			Usage: "[Default: true] If set to false, files are uploaded according to their file system hierarchy.` `",
-		},
-		cli.BoolFlag{
-			Name:  "regexp",
-			Usage: "[Default: false] Set to true to use a regular expression instead of wildcards expression to collect files to upload.` `",
-		},
-		cli.StringFlag{
-			Name:  "retries",
-			Usage: "[Default: " + strconv.Itoa(cliutils.Retries) + "] Number of upload retries.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] Set to true to disable communication with Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "explode",
-			Usage: "[Default: false] Set to true to extract an archive after it is deployed to Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "symlinks",
-			Usage: "[Default: false] Set to true to preserve symbolic links structure in Artifactory.` `",
-		},
-		getIncludeDirsFlag(),
-		getPropertiesFlag("Those properties will be attached to the uploaded artifacts."),
-		getFailNoOpFlag(),
-		getThreadsFlag(),
-		getSyncDeletesFlag("[Optional] Specific path in Artifactory, under which to sync artifacts after the upload. After the upload, this path will include only the artifacts uploaded during this upload operation. The other files under this path will be deleted.` `"),
-		getQuiteFlag("[Default: $CI] Set to true to skip the sync-deletes confirmation message.` `"),
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getDownloadFlags() []cli.Flag {
-	downloadFlags := append(getServerWithClientCertsFlags(), getSortLimitFlags()...)
-	downloadFlags = append(downloadFlags, getSpecFlags()...)
-	downloadFlags = append(downloadFlags, getBuildAndModuleFlags()...)
-	downloadFlags = append(downloadFlags, getExclusionsFlags()...)
-	return append(downloadFlags, []cli.Flag{
-		cli.BoolTFlag{
-			Name:  "recursive",
-			Usage: "[Default: true] Set to false if you do not wish to include the download of artifacts inside sub-folders in Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "flat",
-			Usage: "[Default: false] Set to true if you do not wish to have the Artifactory repository path structure created locally for your downloaded files.` `",
-		},
-		cli.StringFlag{
-			Name:  "build",
-			Usage: "[Optional] If specified, only artifacts of the specified build are matched. The property format is build-name/build-number. If you do not specify the build number, the artifacts are filtered by the latest build number.` `",
-		},
-		cli.StringFlag{
-			Name:  "min-split",
-			Value: "",
-			Usage: "[Default: " + strconv.Itoa(cliutils.DownloadMinSplitKb) + "] Minimum file size in KB to split into ranges when downloading. Set to -1 for no splits.` `",
-		},
-		cli.StringFlag{
-			Name:  "split-count",
-			Value: "",
-			Usage: "[Default: " + strconv.Itoa(cliutils.DownloadSplitCount) + "] Number of parts to split a file when downloading. Set to 0 for no splits.` `",
-		},
-		cli.StringFlag{
-			Name:  "retries",
-			Usage: "[Default: " + strconv.Itoa(cliutils.Retries) + "] Number of download retries.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] Set to true to disable communication with Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "explode",
-			Usage: "[Default: false] Set to true to extract an archive after it is downloaded from Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "validate-symlinks",
-			Usage: "[Default: false] Set to true to perform a checksum validation when downloading symbolic links.` `",
-		},
-		getBundleFlag(),
-		getIncludeDirsFlag(),
-		getPropertiesFlag("Only artifacts with these properties will be downloaded."),
-		getExcludePropertiesFlag("Only artifacts without the specified properties will be downloaded"),
-		getFailNoOpFlag(),
-		getThreadsFlag(),
-		getArchiveEntriesFlag(),
-		getSyncDeletesFlag("[Optional] Specific path in the local file system, under which to sync dependencies after the download. After the download, this path will include only the dependencies downloaded during this download operation. The other files under this path will be deleted.` `"),
-		getQuiteFlag("[Default: $CI] Set to true to skip the sync-deletes confirmation message.` `"),
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getTemplateUsersFlags() []cli.Flag {
-	return append(getServerWithClientCertsFlags(), cli.StringFlag{
-		Name:  "vars",
-		Usage: "[Optional] List of variables in the form of \"key1=value1;key2=value2;...\" to be replaced in the template. In the template, the variables should be used as follows: ${key1}.` `",
-	})
-}
-
-func getRepoDeleteFlags() []cli.Flag {
-	return append(getServerWithClientCertsFlags(), getQuiteFlag("[Default: $CI] Set to true to skip the delete confirmation message.` `"))
-}
-
-func getReplicationDeleteFlags() []cli.Flag {
-	return getRepoDeleteFlags()
-}
-
-func getBuildFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
-			Name:  "build-name",
-			Usage: "[Optional] Providing this option will collect and record build info for this build name. Build number option is mandatory when this option is provided.` `",
-		},
-		cli.StringFlag{
-			Name:  "build-number",
-			Usage: "[Optional] Providing this option will collect and record build info for this build number. Build name option is mandatory when this option is provided.` `",
-		},
-	}
-}
-
-func getBuildAndModuleFlags() []cli.Flag {
-	return append(getBuildFlags(), cli.StringFlag{
-		Name:  "module",
-		Usage: "[Optional] Optional module name for the build-info. Build name and number options are mandatory when this option is provided.` `",
-	})
-}
-
-func getSkipLoginFlag() cli.Flag {
-	return cli.BoolFlag{
-		Name:  "skip-login",
-		Usage: "[Default: false] Set to true if you'd like the command to skip performing docker login.` `",
-	}
-}
-
-func getServerIdFlag() cli.Flag {
-	return cli.StringFlag{
-		Name:  "server-id",
-		Usage: "[Optional] Artifactory server ID configured using the config command.` `",
-	}
-}
-
-func getFailNoOpFlag() cli.Flag {
-	return cli.BoolFlag{
-		Name:  "fail-no-op",
-		Usage: "[Default: false] Set to true if you'd like the command to return exit code 2 in case of no files are affected.` `",
-	}
-}
-
-func getExclusionsFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
-			Name:   "exclude-patterns",
-			Usage:  "[Optional] Semicolon-separated list of exclude patterns. Exclude patterns may contain the * and the ? wildcards. Unlike the Source path, it must not include the repository name at the beginning of the path.` `",
-			Hidden: true,
-		},
-		cli.StringFlag{
-			Name:  "exclusions",
-			Usage: "[Optional] Semicolon-separated list of exclusions. Exclusions can include the * and the ? wildcards.` `",
-		},
-	}
-}
-
-func getUploadExclusionsFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
-			Name:   "exclude-patterns",
-			Usage:  "[Optional] Semicolon-separated list of exclude patterns. Exclude patterns may contain the * and the ? wildcards or a regex pattern, according to the value of the 'regexp' option.` `",
-			Hidden: true,
-		},
-		cli.StringFlag{
-			Name:  "exclusions",
-			Usage: "[Optional] Semicolon-separated list of exclude patterns. Exclude patterns may contain the * and the ? wildcards or a regex pattern, according to the value of the 'regexp' option.` `",
-		},
-	}
-}
-
-func getSpecFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
-			Name:  "spec",
-			Usage: "[Optional] Path to a File Spec.` `",
-		},
-		cli.StringFlag{
-			Name:  "spec-vars",
-			Usage: "[Optional] List of variables in the form of \"key1=value1;key2=value2;...\" to be replaced in the File Spec. In the File Spec, the variables should be used as follows: ${key1}.` `",
-		},
-	}
-}
-
-func getGradleFlags() []cli.Flag {
-	return append(getBuildFlags(), getDeploymentThreadsFlag())
-}
-
-func getMavenFlags() []cli.Flag {
-	flags := append(getBuildFlags(), getDeploymentThreadsFlag())
-	return append(flags, getInsecureTlsFlag())
-}
-
-func getDockerPushFlags() []cli.Flag {
-	var flags []cli.Flag
-	flags = append(flags, getDockerFlags()...)
-	flags = append(flags, getThreadsFlag())
-	return flags
-}
-
-func getDockerPullFlags() []cli.Flag {
-	return getDockerFlags()
-}
-
-func getDockerFlags() []cli.Flag {
-	var flags []cli.Flag
-	flags = append(flags, getBuildAndModuleFlags()...)
-	flags = append(flags, getServerFlags()...)
-	flags = append(flags, getSkipLoginFlag())
-	return flags
-}
-func getDeprecatedFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
-			Name:  "url",
-			Usage: "[Deprecated] [Optional] Artifactory URL.` `",
-		},
-		cli.StringFlag{
-			Name:  "user",
-			Usage: "[Deprecated] [Optional] Artifactory username.` `",
-		},
-		cli.StringFlag{
-			Name:  "password",
-			Usage: "[Deprecated] [Optional] Artifactory password.` `",
-		},
-		cli.StringFlag{
-			Name:  "apikey",
-			Usage: "[Deprecated] [Optional] Artifactory API key.` `",
-		},
-		cli.StringFlag{
-			Name:  "access-token",
-			Usage: "[Deprecated] [Optional] Artifactory access token.` `",
-		},
-	}
-}
-
-//This flag are not valid for native npm commands.
-func getNpmLegacyFlags() []cli.Flag {
-	npmFlags := cli.StringFlag{
-		Name:  "npm-args",
-		Usage: "[Deprecated] [Optional] A list of npm arguments and options in the form of \"--arg1=value1 --arg2=value2\"` `",
-	}
-	return append(getDeprecatedFlags(), npmFlags)
-}
-
-func getNpmCommonFlags() []cli.Flag {
-	npmFlags := getNpmLegacyFlags()
-	return append(getBuildAndModuleFlags(), npmFlags...)
-}
-
-func getNpmFlags() []cli.Flag {
-	npmFlags := getNpmCommonFlags()
-	flag := cli.StringFlag{
-		Name:  "threads",
-		Value: "",
-		Usage: "[Default: 3] Number of working threads for build-info collection.` `",
-	}
-	return append([]cli.Flag{flag}, npmFlags...)
-}
-
-func getBasicBuildToolsFlags() []cli.Flag {
-	return append(getBaseFlags(), getServerIdFlag())
-}
-
-func getNugetFlags() []cli.Flag {
-	nugetFlags := getNugetCommonFlags()
-	return append(getBuildAndModuleFlags(), nugetFlags...)
-}
-
-func getNugetCommonFlags() []cli.Flag {
-	commonNugetFlags := []cli.Flag{
-		cli.StringFlag{
-			Name:  "nuget-args",
-			Usage: "[Deprecated] [Optional] A list of NuGet arguments and options in the form of \"arg1 arg2 arg3\"` `",
-		},
-		cli.StringFlag{
-			Name:  "solution-root",
-			Usage: "[Deprecated] [Default: .] Path to the root directory of the solution. If the directory includes more than one sln files, then the first argument passed in the --nuget-args option should be the name (not the path) of the sln file.` `",
-		},
-	}
-	commonNugetFlags = append(commonNugetFlags, getDeprecatedFlags()...)
-	return commonNugetFlags
-}
-
-func getGoFlags() []cli.Flag {
-	flags := []cli.Flag{
-		cli.BoolFlag{
-			Name:  "no-registry",
-			Usage: "[Deprecated] [Default: false] Set to true if you don't want to use Artifactory as your proxy` `",
-		},
-		cli.BoolFlag{
-			Name:  "publish-deps",
-			Usage: "[Deprecated] [Default: false] Set to true if you wish to publish missing dependencies to Artifactory` `",
-		},
-	}
-	flags = append(flags, getDeprecatedFlags()...)
-	return flags
-}
-
-func getGoAndBuildToolFlags() []cli.Flag {
-	flags := getGoFlags()
-	flags = append(getBuildAndModuleFlags(), flags...)
-	return flags
-}
-
-func getGoRecursivePublishFlags() []cli.Flag {
-	return getBasicBuildToolsFlags()
-}
-
-func getGoPublishFlags() []cli.Flag {
-	flags := []cli.Flag{
-		cli.StringFlag{
-			Name:  "deps",
-			Value: "",
-			Usage: "[Optional] List of project dependencies in the form of \"dep1-name:version,dep2-name:version...\" to be published to Artifactory. Use \"ALL\" to publish all dependencies.` `",
-		},
-		cli.BoolTFlag{
-			Name:  "self",
-			Usage: "[Default: true] Set false to skip publishing the project package zip file to Artifactory..` `",
-		},
-	}
-	flags = append(flags, getBasicBuildToolsFlags()...)
-	flags = append(flags, getBuildAndModuleFlags()...)
-	return flags
-}
-
-func getMoveFlags() []cli.Flag {
-	moveFlags := append(getServerWithClientCertsFlags(), getSortLimitFlags()...)
-	moveFlags = append(moveFlags, getSpecFlags()...)
-	moveFlags = append(moveFlags, getExclusionsFlags()...)
-	return append(moveFlags, []cli.Flag{
-		cli.BoolTFlag{
-			Name:  "recursive",
-			Usage: "[Default: true] Set to false if you do not wish to move artifacts inside sub-folders in Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "flat",
-			Usage: "[Default: false] If set to false, files are moved according to their file system hierarchy.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] Set to true to disable communication with Artifactory.` `",
-		},
-		cli.StringFlag{
-			Name:  "build",
-			Usage: "[Optional] If specified, only artifacts of the specified build are matched. The property format is build-name/build-number. If you do not specify the build number, the artifacts are filtered by the latest build number.` `",
-		},
-		getPropertiesFlag("Only artifacts with these properties will be moved."),
-		getExcludePropertiesFlag("Only artifacts without the specified properties will be moved"),
-		getFailNoOpFlag(),
-		getArchiveEntriesFlag(),
-		getInsecureTlsFlag(),
-	}...)
-
-}
-
-func getCopyFlags() []cli.Flag {
-	copyFlags := append(getServerWithClientCertsFlags(), getSortLimitFlags()...)
-	copyFlags = append(copyFlags, getSpecFlags()...)
-	copyFlags = append(copyFlags, getExclusionsFlags()...)
-	return append(copyFlags, []cli.Flag{
-		cli.BoolTFlag{
-			Name:  "recursive",
-			Usage: "[Default: true] Set to false if you do not wish to copy artifacts inside sub-folders in Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "flat",
-			Usage: "[Default: false] If set to false, files are copied according to their file system hierarchy.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] Set to true to disable communication with Artifactory.` `",
-		},
-		cli.StringFlag{
-			Name:  "build",
-			Usage: "[Optional] If specified, only artifacts of the specified build are matched. The property format is build-name/build-number. If you do not specify the build number, the artifacts are filtered by the latest build number.` `",
-		},
-		getBundleFlag(),
-		getPropertiesFlag("Only artifacts with these properties will be copied."),
-		getExcludePropertiesFlag("Only artifacts without the specified properties will be copied"),
-		getFailNoOpFlag(),
-		getArchiveEntriesFlag(),
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getDeleteFlags() []cli.Flag {
-	deleteFlags := append(getServerWithClientCertsFlags(), getSortLimitFlags()...)
-	deleteFlags = append(deleteFlags, getSpecFlags()...)
-	deleteFlags = append(deleteFlags, getExclusionsFlags()...)
-	return append(deleteFlags, []cli.Flag{
-		cli.BoolTFlag{
-			Name:  "recursive",
-			Usage: "[Default: true] Set to false if you do not wish to delete artifacts inside sub-folders in Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] Set to true to disable communication with Artifactory.` `",
-		},
-		cli.StringFlag{
-			Name:  "build",
-			Usage: "[Optional] If specified, only artifacts of the specified build are matched. The property format is build-name/build-number. If you do not specify the build number, the artifacts are filtered by the latest build number.` `",
-		},
-		getQuiteFlag("[Default: $CI] Set to true to skip the delete confirmation message.` `"),
-		getPropertiesFlag("Only artifacts with these properties will be deleted."),
-		getExcludePropertiesFlag("Only artifacts without the specified properties will be deleted"),
-		getFailNoOpFlag(),
-		getThreadsFlag(),
-		getArchiveEntriesFlag(),
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getSearchFlags() []cli.Flag {
-	searchFlags := append(getServerWithClientCertsFlags(), getSortLimitFlags()...)
-	searchFlags = append(searchFlags, getSpecFlags()...)
-	searchFlags = append(searchFlags, getExclusionsFlags()...)
-	return append(searchFlags, []cli.Flag{
-		cli.BoolTFlag{
-			Name:  "recursive",
-			Usage: "[Default: true] Set to false if you do not wish to search artifacts inside sub-folders in Artifactory.` `",
-		},
-		cli.StringFlag{
-			Name:  "build",
-			Usage: "[Optional] If specified, only artifacts of the specified build are matched. The property format is build-name/build-number. If you do not specify the build number, the artifacts are filtered by the latest build number.` `",
-		},
-		cli.BoolFlag{
-			Name:  "count",
-			Usage: "[Optional] Set to true to display only the total of files or folders found.` `",
-		},
-		getBundleFlag(),
-		getIncludeDirsFlag(),
-		getPropertiesFlag("Only artifacts with these properties will be returned."),
-		getExcludePropertiesFlag("Only artifacts without the specified properties will be returned"),
-		getFailNoOpFlag(),
-		getArchiveEntriesFlag(),
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getSyncDeletesFlag(description string) cli.Flag {
-	return cli.StringFlag{
-		Name:  "sync-deletes",
-		Usage: description,
-	}
-}
-
-func getSetOrDeletePropsFlags() []cli.Flag {
-	flags := append(getSpecFlags(), []cli.Flag{
-		getPropertiesFlag("Only artifacts with these properties are affected."),
-		getExcludePropertiesFlag("Only artifacts without the specified properties are affected"),
-		getInsecureTlsFlag(),
-	}...)
-	return append(flags, getPropertiesFlags()...)
-}
-
-func getPropertiesFlag(description string) cli.Flag {
-	return cli.StringFlag{
-		Name:  "props",
-		Usage: fmt.Sprintf("[Optional] List of properties in the form of \"key1=value1;key2=value2,...\". %s ` `", description),
-	}
-}
-
-func getExcludePropertiesFlag(description string) cli.Flag {
-	return cli.StringFlag{
-		Name:  "exclude-props",
-		Usage: fmt.Sprintf("[Optional] List of properties in the form of \"key1=value1;key2=value2,...\". %s ` `", description),
-	}
-}
-
-func getQuiteFlag(description string) cli.Flag {
-	return cli.BoolFlag{
-		Name:  "quiet",
-		Usage: description,
-	}
-}
-
-func getPropertiesFlags() []cli.Flag {
-	propsFlags := append(getServerWithClientCertsFlags(), getSortLimitFlags()...)
-	propsFlags = append(propsFlags, getExclusionsFlags()...)
-	return append(propsFlags, []cli.Flag{
-		cli.BoolTFlag{
-			Name:  "recursive",
-			Usage: "[Default: true] When false, artifacts inside sub-folders in Artifactory will not be affected.` `",
-		},
-		cli.StringFlag{
-			Name:  "build",
-			Usage: "[Optional] If specified, only artifacts of the specified build are matched. The property format is build-name/build-number. If you do not specify the build number, the artifacts are filtered by the latest build number.` `",
-		},
-		getBundleFlag(),
-		getIncludeDirsFlag(),
-		getFailNoOpFlag(),
-		getThreadsFlag(),
-		getArchiveEntriesFlag(),
-	}...)
-}
-
-func getIncludeDirsFlag() cli.Flag {
-	return cli.BoolFlag{
-		Name:  "include-dirs",
-		Usage: "[Default: false] Set to true if you'd like to also apply the source path pattern for directories and not just for files.` `",
-	}
-}
-
-func getArchiveEntriesFlag() cli.Flag {
-	return cli.StringFlag{
-		Name:  "archive-entries",
-		Usage: "[Optional] If specified, only archive artifacts containing entries matching this pattern are matched. You can use wildcards to specify multiple artifacts.` `",
-	}
-}
-
-func getDeploymentThreadsFlag() cli.Flag {
-	return cli.StringFlag{
-		Name:  "threads",
-		Value: "",
-		Usage: "[Default: 3] Number of threads for uploading build artifacts.` `",
-	}
-}
-
-func getThreadsFlag() cli.Flag {
-	return cli.StringFlag{
-		Name:  "threads",
-		Value: "",
-		Usage: "[Default: 3] Number of working threads.` `",
-	}
-}
-
-func getBundleFlag() cli.Flag {
-	return cli.StringFlag{
-		Name:  "bundle",
-		Usage: "[Optional] If specified, only artifacts of the specified bundle are matched. The value format is bundle-name/bundle-version.` `",
-	}
-}
-
-func getBuildPublishFlags() []cli.Flag {
-	return append(getServerFlags(), []cli.Flag{
-		cli.StringFlag{
-			Name:  "build-url",
-			Usage: "[Optional] Can be used for setting the CI server build URL in the build-info.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] Set to true to disable communication with Artifactory.` `",
-		},
-		cli.StringFlag{
-			Name:  "env-include",
-			Usage: "[Default: *] List of patterns in the form of \"value1;value2;...\" Only environment variables match those patterns will be included.` `",
-		},
-		cli.StringFlag{
-			Name:  "env-exclude",
-			Usage: "[Default: *password*;*secret*;*key*;*token*] List of case insensitive patterns in the form of \"value1;value2;...\". Environment variables match those patterns will be excluded.` `",
-		},
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getBuildAddDependenciesFlags() []cli.Flag {
-	buildAddDependenciesFlags := append(getSpecFlags(), getUploadExclusionsFlags()...)
-	return append(buildAddDependenciesFlags, []cli.Flag{
-		cli.BoolTFlag{
-			Name:  "recursive",
-			Usage: "[Default: true] Set to false if you do not wish to collect artifacts in sub-folders to be added to the build info.` `",
-		},
-		cli.BoolFlag{
-			Name:  "regexp",
-			Usage: "[Default: false] Set to true to use a regular expression instead of wildcards expression to collect files to be added to the build info.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] Set to true to only get a summery of the dependencies that will be added to the build info.` `",
-		},
-	}...)
-}
-
-func getBuildPromotionFlags() []cli.Flag {
-	return append(getServerFlags(), []cli.Flag{
-		cli.StringFlag{
-			Name:  "status",
-			Usage: "[Optional] Build promotion status.` `",
-		},
-		cli.StringFlag{
-			Name:  "comment",
-			Usage: "[Optional] Build promotion comment.` `",
-		},
-		cli.StringFlag{
-			Name:  "source-repo",
-			Usage: "[Optional] Build promotion source repository.` `",
-		},
-		cli.BoolFlag{
-			Name:  "include-dependencies",
-			Usage: "[Default: false] If set to true, the build dependencies are also promoted.` `",
-		},
-		cli.BoolFlag{
-			Name:  "copy",
-			Usage: "[Default: false] If set true, the build artifacts and dependencies are copied to the target repository, otherwise they are moved.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] If true, promotion is only simulated. The build is not promoted.` `",
-		},
-		getPropertiesFlag("A list of properties to attach to the build artifacts."),
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getBuildDistributeFlags() []cli.Flag {
-	return append(getServerFlags(), []cli.Flag{
-		cli.StringFlag{
-			Name:  "source-repos",
-			Usage: "[Optional] List of local repositories in the form of \"repo1,repo2,...\" from which build artifacts should be deployed.` `",
-		},
-		cli.StringFlag{
-			Name:  "passphrase",
-			Usage: "[Optional] If specified, Artifactory will GPG sign the build deployed to Bintray and apply the specified passphrase.` `",
-		},
-		cli.BoolTFlag{
-			Name:  "publish",
-			Usage: "[Default: true] If true, builds are published when deployed to Bintray.` `",
-		},
-		cli.BoolFlag{
-			Name:  "override",
-			Usage: "[Default: false] If true, Artifactory overwrites builds already existing in the target path in Bintray.` `",
-		},
-		cli.BoolFlag{
-			Name:  "async",
-			Usage: "[Default: false] If true, the build will be distributed asynchronously.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] If true, distribution is only simulated. No files are actually moved.` `",
-		},
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getGitLfsCleanFlags() []cli.Flag {
-	return append(getServerFlags(), []cli.Flag{
-		cli.StringFlag{
-			Name:  "refs",
-			Usage: "[Default: refs/remotes/*] List of Git references in the form of \"ref1,ref2,...\" which should be preserved.` `",
-		},
-		cli.StringFlag{
-			Name:  "repo",
-			Usage: "[Optional] Local Git LFS repository which should be cleaned. If omitted, this is detected from the Git repository.` `",
-		},
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] If true, cleanup is only simulated. No files are actually deleted.` `",
-		},
-		getQuiteFlag("[Default: $CI] Set to true to skip the delete confirmation message.` `"),
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getConfigFlags() []cli.Flag {
-	flags := []cli.Flag{
-		cli.BoolTFlag{
-			Name:  "interactive",
-			Usage: "[Default: true, unless $CI is true] Set to false if you do not want the config command to be interactive. If true, the --url option becomes optional.` `",
-		},
-		cli.BoolTFlag{
-			Name:  "enc-password",
-			Usage: "[Default: true] If set to false then the configured password will not be encrypted using Artifactory's encryption API.` `",
-		},
-	}
-	flags = append(flags, getBaseFlags()...)
-	flags = append(flags, getClientCertsFlags()...)
-	return append(flags,
-		getSshKeyPathFlag()...)
-}
-
-func getSshKeyPathFlag() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
-			Name:  "ssh-key-path",
-			Usage: "[Optional] SSH key file path.` `",
-		},
-	}
-}
-
-func getBuildDiscardFlags() []cli.Flag {
-	return append(getServerFlags(), []cli.Flag{
-		cli.StringFlag{
-			Name:  "max-days",
-			Usage: "[Optional] The maximum number of days to keep builds in Artifactory.` `",
-		},
-		cli.StringFlag{
-			Name:  "max-builds",
-			Usage: "[Optional] The maximum number of builds to store in Artifactory.` `",
-		},
-		cli.StringFlag{
-			Name:  "exclude-builds",
-			Usage: "[Optional] List of build numbers in the form of \"value1,value2,...\", that should not be removed from Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "delete-artifacts",
-			Usage: "[Default: false] If set to true, automatically removes build artifacts stored in Artifactory.` `",
-		},
-		cli.BoolFlag{
-			Name:  "async",
-			Usage: "[Default: false] If set to true, build discard will run asynchronously and will not wait for response.` `",
-		},
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getReleaseBundleCreateUpdateFlags() []cli.Flag {
-	releaseBundleFlags := append(getServerFlags(), getSpecFlags()...)
-	return append(releaseBundleFlags, []cli.Flag{
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] Set to true to disable communication with JFrog Distribution.` `",
-		},
-		cli.BoolFlag{
-			Name:  "sign",
-			Usage: "[Default: false] If set to true, automatically signs the release bundle version.` `",
-		},
-		cli.StringFlag{
-			Name:  "desc",
-			Usage: "[Optional] Description of the release bundle.` `",
-		},
-		cli.StringFlag{
-			Name:  "release-notes-path",
-			Usage: "[Optional] Path to a file describes the release notes for the release bundle version.` `",
-		},
-		cli.StringFlag{
-			Name:  "release-notes-syntax",
-			Usage: "[Default: plain_text] The syntax for the release notes. Can be one of 'markdown', 'asciidoc', or 'plain_text` `",
-		},
-		cli.StringFlag{
-			Name:  "exclusions",
-			Usage: "[Optional] Semicolon-separated list of exclusions. Exclusions can include the * and the ? wildcards.` `",
-		},
-		getDistributionPassphraseFlag(),
-		getStoringRepositoryFlag(),
-	}...)
-}
-
-func getReleaseBundleSignFlags() []cli.Flag {
-	return append(getServerFlags(), getDistributionPassphraseFlag(), getStoringRepositoryFlag())
-}
-
-func getDistributionPassphraseFlag() cli.Flag {
-	return cli.StringFlag{
-		Name:  "passphrase",
-		Usage: "[Optional] The passphrase for the signing key. ` `",
-	}
-}
-
-func getStoringRepositoryFlag() cli.Flag {
-	return cli.StringFlag{
-		Name:  "repo",
-		Usage: "[Optional] A repository name at source Artifactory to store release bundle artifacts in. If not provided, Artifactory will use the default one.` `",
-	}
-}
-
-func getReleaseBundleDistributeFlags() []cli.Flag {
-	return append(getServerFlags(), []cli.Flag{
-		cli.BoolFlag{
-			Name:  "dry-run",
-			Usage: "[Default: false] Set to true to disable communication with Artifactory.` `",
-		},
-		cli.StringFlag{
-			Name:  "dist-rules",
-			Usage: "Path to distribution rules.` `",
-		},
-		cli.StringFlag{
-			Name:  "site",
-			Usage: "[Default: '*'] Wildcard filter for site name. ` `",
-		},
-		cli.StringFlag{
-			Name:  "city",
-			Usage: "[Default: '*'] Wildcard filter for site city name. ` `",
-		},
-		cli.StringFlag{
-			Name:  "country-codes",
-			Usage: "[Default: '*'] Semicolon-separated list of wildcard filters for site country codes. ` `",
-		},
-	}...)
-}
-
-func getReleaseBundleDeleteFlags() []cli.Flag {
-	return append(getReleaseBundleDistributeFlags(), []cli.Flag{
-		cli.BoolFlag{
-			Name:  "delete-from-dist",
-			Usage: "[Default: false] Set to true to delete release bundle version in JFrog Distribution itself after deletion is complete in the specified Edge node/s.` `",
-		},
-		getQuiteFlag("[Default: false] Set to true to skip the delete confirmation message.` `"),
-	}...)
-}
-
-func getBuildScanFlags() []cli.Flag {
-	return append(getServerFlags(), []cli.Flag{
-		cli.BoolTFlag{
-			Name:  "fail",
-			Usage: "[Default: true] Set to false if you do not wish the command to return exit code 3, even if the 'Fail Build' rule is matched by Xray.` `",
-		},
-		getInsecureTlsFlag(),
-	}...)
-}
-
-func getBuildAddGitFlags() []cli.Flag {
-	bagFlags := []cli.Flag{
-		cli.StringFlag{
-			Name:  "config",
-			Usage: "[Optional] Path to a configuration file.` `",
-		},
-	}
-	return append(bagFlags, getServerIdFlag())
-}
-
-func getCurlFlags() []cli.Flag {
-	return []cli.Flag{getServerIdFlag()}
-}
-
-func getPipInstallFlags() []cli.Flag {
-	return getBuildAndModuleFlags()
 }
 
 func createArtifactoryDetailsByFlags(c *cli.Context, distribution bool) (*config.ArtifactoryDetails, error) {
-	artDetails, err := createArtifactoryDetails(c, true)
+	artDetails, err := createArtifactoryDetailsWithConfigOffer(c, distribution)
 	if err != nil {
 		return nil, err
 	}
@@ -1930,7 +1029,7 @@ func configCmd(c *cli.Context) error {
 		if err := validateServerId(serverId); err != nil {
 			return err
 		}
-		artDetails, err := config.GetArtifactorySpecificConfig(serverId)
+		artDetails, err := config.GetArtifactorySpecificConfig(serverId, true, false)
 		if err != nil {
 			return err
 		}
@@ -1940,7 +1039,7 @@ func configCmd(c *cli.Context) error {
 		}
 		if c.Args()[0] == "delete" {
 			if configCommandConfiguration.Interactive {
-				if !cliutils.InteractiveConfirm("Are you sure you want to delete \"" + serverId + "\" configuration?") {
+				if !cliutils.AskYesNo("Are you sure you want to delete \""+serverId+"\" configuration?", false) {
 					return nil
 				}
 			}
@@ -1968,7 +1067,8 @@ func configCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	configCmd := commands.NewConfigCommand().SetDetails(configCommandConfiguration.ArtDetails).SetInteractive(configCommandConfiguration.Interactive).SetServerId(serverId).SetEncPassword(configCommandConfiguration.EncPassword)
+	configCmd := commands.NewConfigCommand().SetDetails(configCommandConfiguration.ArtDetails).SetInteractive(configCommandConfiguration.Interactive).
+		SetServerId(serverId).SetEncPassword(configCommandConfiguration.EncPassword).SetUseBasicAuthOnly(configCommandConfiguration.BasicAuthOnly)
 	return configCmd.Config()
 }
 
@@ -2010,7 +1110,7 @@ func mvnCmd(c *cli.Context) error {
 		}
 		// Validates the mvn command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 		// Otherwise, throw an error.
-		if err := validateCommand(args, getBasicBuildToolsFlags()); err != nil {
+		if err := validateCommand(args, cliutils.GetBasicBuildToolsFlags()); err != nil {
 			return err
 		}
 		filteredMavenArgs, insecureTls, err := utils.ExtractInsecureTlsFromArgs(args)
@@ -2051,7 +1151,7 @@ func gradleCmd(c *cli.Context) error {
 		}
 		// Validates the gradle command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 		// Otherwise, throw an error.
-		if err := validateCommand(args, getBasicBuildToolsFlags()); err != nil {
+		if err := validateCommand(args, cliutils.GetBasicBuildToolsFlags()); err != nil {
 			return err
 		}
 		filteredGradleArgs, buildConfiguration, err := utils.ExtractBuildDetailsFromArgs(args)
@@ -2086,6 +1186,25 @@ func gradleLegacyCmd(c *cli.Context) error {
 	gradleCmd.SetConfiguration(configuration).SetTasks(c.Args().Get(0)).SetConfigPath(c.Args().Get(1)).SetThreads(threads)
 
 	return commands.Exec(gradleCmd)
+}
+
+func dockerPromoteCmd(c *cli.Context) error {
+	if c.NArg() != 3 {
+		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
+	}
+	artDetails, err := createArtifactoryDetailsByFlags(c, false)
+	if err != nil {
+		return err
+	}
+	params := services.NewDockerPromoteParams(c.Args().Get(0), c.Args().Get(1), c.Args().Get(2))
+	params.TargetDockerImage = c.String("target-docker-image")
+	params.SourceTag = c.String("source-tag")
+	params.TargetTag = c.String("target-tag")
+	params.Copy = c.Bool("copy")
+	dockerPromoteCommand := docker.NewDockerPromoteCommand()
+	dockerPromoteCommand.SetParams(params).SetRtDetails(artDetails)
+
+	return commands.Exec(dockerPromoteCommand)
 }
 
 func dockerPushCmd(c *cli.Context) error {
@@ -2145,26 +1264,43 @@ func nugetCmd(c *cli.Context) error {
 		return err
 	}
 
+	// A config file was found.
 	if exists {
 		if c.NArg() < 1 {
 			return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 		}
-		// Found a config file.
+		nugetConfig, err := utils.ReadResolutionOnlyConfiguration(configFilePath)
+		if err != nil {
+			return errors.New(fmt.Sprintf("Error occurred while attempting to read nuget-configuration file: %s", err.Error()))
+		}
+		// Set arg values.
+		rtDetails, err := nugetConfig.RtDetails()
+		if err != nil {
+			return err
+		}
+
 		args, err := utils.ParseArgs(extractCommand(c))
 		if err != nil {
 			return errorutils.CheckError(err)
 		}
 		// Validates the nuget command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 		// Otherwise, throw an error.
-		if err := validateCommand(args, getNugetCommonFlags()); err != nil {
+		if err := validateCommand(args, cliutils.GetLegacyNugetFlags()); err != nil {
 			return err
 		}
+
 		filteredNugetArgs, buildConfiguration, err := utils.ExtractBuildDetailsFromArgs(args)
 		if err != nil {
 			return err
 		}
-		nugetCmd := nuget.NewNugetCommand()
-		nugetCmd.SetConfigFilePath(configFilePath).SetBuildConfiguration(buildConfiguration).SetArgs(strings.Join(filteredNugetArgs, " "))
+
+		nugetCmd := dotnet.NewNugetCommand()
+		nugetCmd.SetRtDetails(rtDetails).SetRepoName(nugetConfig.TargetRepo()).SetBuildConfiguration(buildConfiguration).SetBasicCommand(filteredNugetArgs[0])
+		// Since we are using the values of the command's arguments and flags along the buildInfo collection process,
+		// we want to separate the actual NuGet basic command (restore/build...) from the arguments and flags
+		if len(filteredNugetArgs) > 1 {
+			nugetCmd.SetArgAndFlags(strings.Join(filteredNugetArgs[1:], " "))
+		}
 		return commands.Exec(nugetCmd)
 	}
 	// If config file not found, use nuget legacy command
@@ -2176,7 +1312,7 @@ func nugetLegacyCmd(c *cli.Context) error {
 	if c.NArg() != 2 {
 		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 	}
-	nugetCmd := nuget.NewLegacyNugetCommand()
+	nugetCmd := dotnet.NewLegacyNugetCommand()
 	buildConfiguration, err := createBuildConfigurationWithModule(c)
 	if err != nil {
 		return err
@@ -2185,7 +1321,7 @@ func nugetLegacyCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	nugetCmd.SetArgs(c.Args().Get(0)).SetFlags(c.String("nuget-args")).
+	nugetCmd.SetBasicCommand(c.Args().Get(0)).SetArgAndFlags(c.String("nuget-args")).
 		SetRepoName(c.Args().Get(1)).
 		SetBuildConfiguration(buildConfiguration).
 		SetSolutionPath(c.String("solution-root")).
@@ -2199,7 +1335,50 @@ func nugetDepsTreeCmd(c *cli.Context) error {
 		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 	}
 
-	return nuget.DependencyTreeCmd()
+	return dotnet.DependencyTreeCmd()
+}
+
+func dotnetCmd(c *cli.Context) error {
+	if show, err := showCmdHelpIfNeeded(c); show || err != nil {
+		return err
+	}
+
+	if c.NArg() < 1 {
+		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
+	}
+
+	// Get dotnet configuration.
+	dotnetConfig, err := utils.GetResolutionOnlyConfiguration(utils.Dotnet)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Error occurred while attempting to read dotnet-configuration file: %s\n"+
+			"Please run 'jfrog rt dotnet-config' command prior to running 'jfrog rt dotnet'.", err.Error()))
+	}
+
+	// Set arg values.
+	rtDetails, err := dotnetConfig.RtDetails()
+	if err != nil {
+		return err
+	}
+
+	args, err := utils.ParseArgs(extractCommand(c))
+	if err != nil {
+		return errorutils.CheckError(err)
+	}
+
+	filteredDotnetArgs, buildConfiguration, err := utils.ExtractBuildDetailsFromArgs(args)
+	if err != nil {
+		return err
+	}
+
+	// Run command.
+	dotnetCmd := dotnet.NewDotnetCoreCliCommand()
+	dotnetCmd.SetRtDetails(rtDetails).SetRepoName(dotnetConfig.TargetRepo()).SetBuildConfiguration(buildConfiguration).SetBasicCommand(filteredDotnetArgs[0])
+	// Since we are using the values of the command's arguments and flags along the buildInfo collection process,
+	// we want to separate the actual .NET basic command (restore/build...) from the arguments and flags
+	if len(filteredDotnetArgs) > 1 {
+		dotnetCmd.SetArgAndFlags(strings.Join(filteredDotnetArgs[1:], " "))
+	}
+	return commands.Exec(dotnetCmd)
 }
 
 func npmLegacyInstallCmd(c *cli.Context) error {
@@ -2229,7 +1408,7 @@ func npmLegacyInstallCmd(c *cli.Context) error {
 	return commands.Exec(npmCmd)
 }
 
-func npmInstallCmd(c *cli.Context, npmCmd *npm.NpmInstallCommand, npmLegacyCommand func(*cli.Context) error) error {
+func npmInstallOrCiCmd(c *cli.Context, npmCmd *npm.NpmInstallOrCiCommand, npmLegacyCommand func(*cli.Context) error) error {
 	if show, err := showCmdHelpIfNeeded(c); show || err != nil {
 		return err
 	}
@@ -2247,7 +1426,7 @@ func npmInstallCmd(c *cli.Context, npmCmd *npm.NpmInstallCommand, npmLegacyComma
 		}
 		// Validates the npm command. If a config file is found, the only flags that can be used are threads, build-name, build-number and module.
 		// Otherwise, throw an error.
-		if err := validateCommand(args, getNpmLegacyFlags()); err != nil {
+		if err := validateCommand(args, cliutils.GetLegacyNpmFlags()); err != nil {
 			return err
 		}
 		npmCmd.SetConfigFilePath(configFilePath).SetArgs(args)
@@ -2296,7 +1475,7 @@ func npmPublishCmd(c *cli.Context) error {
 		}
 		// Validates the npm command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 		// Otherwise, throw an error.
-		if err := validateCommand(args, getNpmLegacyFlags()); err != nil {
+		if err := validateCommand(args, cliutils.GetLegacyNpmFlags()); err != nil {
 			return err
 		}
 		npmCmd := npm.NewNpmPublishCommand()
@@ -2357,7 +1536,7 @@ func goPublishCmd(c *cli.Context) error {
 	err = commands.Exec(goPublishCmd)
 	result := goPublishCmd.Result()
 
-	return cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), err)
+	return cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), nil, "", err)
 }
 
 // This function checks whether the command received --help as a single option.
@@ -2473,7 +1652,7 @@ func goLegacyCmd(c *cli.Context) error {
 	}
 	goArg, err := utils.ParseArgs(strings.Split(c.Args().Get(0), " "))
 	if err != nil {
-		err = cliutils.PrintSummaryReport(0, 1, err)
+		err = cliutils.PrintSummaryReport(0, 1, nil, "", err)
 	}
 	targetRepo := c.Args().Get(1)
 	details, err := createArtifactoryDetailsByFlags(c, false)
@@ -2495,7 +1674,7 @@ func goLegacyCmd(c *cli.Context) error {
 	}
 	err = commands.Exec(goCmd)
 	if err != nil {
-		err = cliutils.PrintSummaryReport(0, 1, err)
+		err = cliutils.PrintSummaryReport(0, 1, nil, "", err)
 	}
 	return err
 }
@@ -2508,7 +1687,7 @@ func goNativeCmd(c *cli.Context, configFilePath string) error {
 	args := extractCommand(c)
 	// Validates the go command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 	// Otherwise, throw an error.
-	if err := validateCommand(args, getGoFlags()); err != nil {
+	if err := validateCommand(args, cliutils.GetLegacyGoFlags()); err != nil {
 		return err
 	}
 	goNative := golang.NewGoNativeCommand()
@@ -2568,6 +1747,13 @@ func createNugetConfigCmd(c *cli.Context) error {
 		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 	}
 	return commandUtils.CreateBuildConfig(c, utils.Nuget)
+}
+
+func createDotnetConfigCmd(c *cli.Context) error {
+	if c.NArg() != 0 {
+		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
+	}
+	return commandUtils.CreateBuildConfig(c, utils.Dotnet)
 }
 
 func createPipConfigCmd(c *cli.Context) error {
@@ -2633,11 +1819,11 @@ func downloadCmd(c *cli.Context) error {
 		return err
 	}
 	downloadCommand := generic.NewDownloadCommand()
-	downloadCommand.SetConfiguration(configuration).SetBuildConfiguration(buildConfiguration).SetSpec(downloadSpec).SetRtDetails(rtDetails).SetDryRun(c.Bool("dry-run")).SetSyncDeletesPath(c.String("sync-deletes")).SetQuiet(cliutils.GetQuietValue(c))
+	downloadCommand.SetConfiguration(configuration).SetBuildConfiguration(buildConfiguration).SetSpec(downloadSpec).SetRtDetails(rtDetails).SetDryRun(c.Bool("dry-run")).SetSyncDeletesPath(c.String("sync-deletes")).SetQuiet(cliutils.GetQuietValue(c)).SetDetailedSummaryt(c.Bool("detailed-summary"))
 	err = commands.Exec(downloadCommand)
 	defer logUtils.CloseLogFile(downloadCommand.LogFile())
 	result := downloadCommand.Result()
-	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), err)
+	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), result.Reader(), rtDetails.Url, err)
 
 	return cliutils.GetCliError(err, result.SuccessCount(), result.FailCount(), isFailNoOp(c))
 }
@@ -2682,7 +1868,7 @@ func uploadCmd(c *cli.Context) error {
 	err = commands.Exec(uploadCmd)
 	defer logUtils.CloseLogFile(uploadCmd.LogFile())
 	result := uploadCmd.Result()
-	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), err)
+	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), nil, "", err)
 
 	return cliutils.GetCliError(err, result.SuccessCount(), result.FailCount(), isFailNoOp(c))
 }
@@ -2717,7 +1903,7 @@ func moveCmd(c *cli.Context) error {
 	moveCmd.SetDryRun(c.Bool("dry-run")).SetRtDetails(rtDetails).SetSpec(moveSpec)
 	err = commands.Exec(moveCmd)
 	result := moveCmd.Result()
-	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), err)
+	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), nil, "", err)
 
 	return cliutils.GetCliError(err, result.SuccessCount(), result.FailCount(), isFailNoOp(c))
 }
@@ -2753,7 +1939,7 @@ func copyCmd(c *cli.Context) error {
 	copyCommand.SetSpec(copySpec).SetDryRun(c.Bool("dry-run")).SetRtDetails(rtDetails)
 	err = commands.Exec(copyCommand)
 	result := copyCommand.Result()
-	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), err)
+	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), nil, "", err)
 
 	return cliutils.GetCliError(err, result.SuccessCount(), result.FailCount(), isFailNoOp(c))
 }
@@ -2794,7 +1980,7 @@ func deleteCmd(c *cli.Context) error {
 	deleteCommand.SetThreads(threads).SetQuiet(cliutils.GetQuietValue(c)).SetDryRun(c.Bool("dry-run")).SetRtDetails(rtDetails).SetSpec(deleteSpec)
 	err = commands.Exec(deleteCommand)
 	result := deleteCommand.Result()
-	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), err)
+	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), nil, "", err)
 
 	return cliutils.GetCliError(err, result.SuccessCount(), result.FailCount(), isFailNoOp(c))
 }
@@ -2831,18 +2017,21 @@ func searchCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	result, err := json.Marshal(searchCmd.SearchResult())
-	err = cliutils.GetCliError(err, len(searchCmd.SearchResult()), 0, isFailNoOp(c))
+	reader := searchCmd.Result().Reader()
+	defer reader.Close()
+	length, err := reader.Length()
 	if err != nil {
 		return err
 	}
-	if c.Bool("count") {
-		log.Output(len(searchCmd.SearchResult()))
-	} else {
-		log.Output(clientutils.IndentJson(result))
+	err = cliutils.GetCliError(err, length, 0, isFailNoOp(c))
+	if err != nil {
+		return err
 	}
-
-	return err
+	if !c.Bool("count") {
+		return utils.PrintSearchResults(reader)
+	}
+	log.Output(length)
+	return nil
 }
 
 func preparePropsCmd(c *cli.Context) (*generic.PropsCommand, error) {
@@ -2895,7 +2084,7 @@ func setPropsCmd(c *cli.Context) error {
 	propsCmd := generic.NewSetPropsCommand().SetPropsCommand(*cmd)
 	err = commands.Exec(propsCmd)
 	result := propsCmd.Result()
-	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), err)
+	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), nil, "", err)
 
 	return cliutils.GetCliError(err, result.SuccessCount(), result.FailCount(), isFailNoOp(c))
 }
@@ -2909,7 +2098,7 @@ func deletePropsCmd(c *cli.Context) error {
 	propsCmd := generic.NewDeletePropsCommand().DeletePropsCommand(*cmd)
 	err = commands.Exec(propsCmd)
 	result := propsCmd.Result()
-	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), err)
+	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), nil, "", err)
 
 	return cliutils.GetCliError(err, result.SuccessCount(), result.FailCount(), isFailNoOp(c))
 }
@@ -2960,7 +2149,7 @@ func buildAddDependenciesCmd(c *cli.Context) error {
 	buildAddDependenciesCmd := buildinfo.NewBuildAddDependenciesCommand().SetDryRun(c.Bool("dry-run")).SetBuildConfiguration(buildConfiguration).SetDependenciesSpec(dependenciesSpec)
 	err = commands.Exec(buildAddDependenciesCmd)
 	result := buildAddDependenciesCmd.Result()
-	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), err)
+	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), nil, "", err)
 	if err != nil {
 		return err
 	}
@@ -3181,10 +2370,13 @@ func releaseBundleDistributeCmd(c *cli.Context) error {
 	if c.NArg() != 2 {
 		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 	}
+	if c.IsSet("max-wait-minutes") && !c.IsSet("sync") {
+		return cliutils.PrintHelpAndReturnError("The --max-wait-minutes option can't be used without --sync", c)
+	}
 	var distributionRules *spec.DistributionRules
 	if c.IsSet("dist-rules") {
 		if c.IsSet("site") || c.IsSet("city") || c.IsSet("country-code") {
-			return cliutils.PrintHelpAndReturnError("flag --dist-rules can't be used with --site, --city or --country-code", c)
+			return cliutils.PrintHelpAndReturnError("The --dist-rules option can't be used with --site, --city or --country-code", c)
 		}
 		var err error
 		distributionRules, err = spec.CreateDistributionRulesFromFile(c.String("dist-rules"))
@@ -3201,7 +2393,11 @@ func releaseBundleDistributeCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	releaseBundleDistributeCmd.SetRtDetails(rtDetails).SetDistributeBundleParams(params).SetDistributionRules(distributionRules).SetDryRun(c.Bool("dry-run"))
+	maxWaitMinutes, err := cliutils.GetIntFlagValue(c, "max-wait-minutes", 0)
+	if err != nil {
+		return err
+	}
+	releaseBundleDistributeCmd.SetRtDetails(rtDetails).SetDistributeBundleParams(params).SetDistributionRules(distributionRules).SetDryRun(c.Bool("dry-run")).SetSync(c.Bool("sync")).SetMaxWaitMinutes(maxWaitMinutes)
 
 	return commands.Exec(releaseBundleDistributeCmd)
 }
@@ -3231,7 +2427,7 @@ func releaseBundleDeleteCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	distributeBundleCmd.SetQuiet(c.Bool("quiet")).SetRtDetails(rtDetails).SetDistributeBundleParams(params).SetDistributionRules(distributionRules).SetDryRun(c.Bool("dry-run"))
+	distributeBundleCmd.SetQuiet(cliutils.GetQuietValue(c)).SetRtDetails(rtDetails).SetDistributeBundleParams(params).SetDistributionRules(distributionRules).SetDryRun(c.Bool("dry-run"))
 
 	return commands.Exec(distributeBundleCmd)
 }
@@ -3274,7 +2470,7 @@ func pipInstallCmd(c *cli.Context) error {
 	}
 
 	// Get pip configuration.
-	pipConfig, err := piputils.GetPipConfiguration()
+	pipConfig, err := utils.GetResolutionOnlyConfiguration(utils.Pip)
 	if err != nil {
 		return errors.New(fmt.Sprintf("Error occurred while attempting to read pip-configuration file: %s\n"+
 			"Please run 'jfrog rt pip-config' command prior to running 'jfrog rt %s'.", err.Error(), "pip-install"))
@@ -3410,6 +2606,112 @@ func replicationDeleteCmd(c *cli.Context) error {
 	return commands.Exec(replicationDeleteCmd)
 }
 
+func permissionTargrtTemplateCmd(c *cli.Context) error {
+	if show, err := showCmdHelpIfNeeded(c); show || err != nil {
+		return err
+	}
+
+	if c.NArg() != 1 {
+		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
+	}
+
+	// Run command.
+	permissionTargetTemplateCmd := permissiontarget.NewPermissionTargetTemplateCommand()
+	permissionTargetTemplateCmd.SetTemplatePath(c.Args().Get(0))
+	return commands.Exec(permissionTargetTemplateCmd)
+}
+
+func permissionTargetCreateCmd(c *cli.Context) error {
+	if show, err := showCmdHelpIfNeeded(c); show || err != nil {
+		return err
+	}
+
+	if c.NArg() != 1 {
+		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
+	}
+
+	rtDetails, err := createArtifactoryDetailsByFlags(c, false)
+	if err != nil {
+		return err
+	}
+
+	// Run command.
+	permissionTargetCreateCmd := permissiontarget.NewPermissionTargetCreateCommand()
+	permissionTargetCreateCmd.SetTemplatePath(c.Args().Get(0)).SetRtDetails(rtDetails).SetVars(c.String("vars"))
+	return commands.Exec(permissionTargetCreateCmd)
+}
+
+func permissionTargetUpdateCmd(c *cli.Context) error {
+	if show, err := showCmdHelpIfNeeded(c); show || err != nil {
+		return err
+	}
+
+	if c.NArg() != 1 {
+		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
+	}
+
+	rtDetails, err := createArtifactoryDetailsByFlags(c, false)
+	if err != nil {
+		return err
+	}
+
+	// Run command.
+	permissionTargetUpdateCmd := permissiontarget.NewPermissionTargetUpdateCommand()
+	permissionTargetUpdateCmd.SetTemplatePath(c.Args().Get(0)).SetRtDetails(rtDetails).SetVars(c.String("vars"))
+	return commands.Exec(permissionTargetUpdateCmd)
+}
+
+func permissionTargetDeleteCmd(c *cli.Context) error {
+	if show, err := showCmdHelpIfNeeded(c); show || err != nil {
+		return err
+	}
+
+	if c.NArg() != 1 {
+		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
+	}
+
+	rtDetails, err := createArtifactoryDetailsByFlags(c, false)
+	if err != nil {
+		return err
+	}
+
+	permissionTargetDeleteCmd := permissiontarget.NewPermissionTargetDeleteCommand()
+	permissionTargetDeleteCmd.SetPermissionTargetName(c.Args().Get(0)).SetRtDetails(rtDetails).SetQuiet(cliutils.GetQuietValue(c))
+	return commands.Exec(permissionTargetDeleteCmd)
+}
+
+func accessTokenCreateCmd(c *cli.Context) error {
+	if show, err := showCmdHelpIfNeeded(c); show || err != nil {
+		return err
+	}
+
+	if c.NArg() != 1 {
+		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
+	}
+
+	rtDetails, err := createArtifactoryDetailsByFlags(c, false)
+	if err != nil {
+		return err
+	}
+	expiry, err := cliutils.GetIntFlagValue(c, "expiry", cliutils.TokenExpiry)
+	if err != nil {
+		return err
+	}
+	accessTokenCreateCmd := generic.NewAccessTokenCreateCommand()
+	accessTokenCreateCmd.SetUserName(c.Args().Get(0)).SetRtDetails(rtDetails).SetRefreshable(c.Bool("refreshable")).SetExpiry(expiry).SetGroups(c.String("groups")).SetAudience(c.String("audience")).SetGrantAdmin(c.Bool("grant-admin"))
+	err = commands.Exec(accessTokenCreateCmd)
+	if err != nil {
+		return err
+	}
+	resString, err := accessTokenCreateCmd.Response()
+	if err != nil {
+		return err
+	}
+	log.Output(clientutils.IndentJson(resString))
+
+	return nil
+}
+
 func validateBuildConfiguration(c *cli.Context, buildConfiguration *utils.BuildConfiguration) error {
 	if buildConfiguration.BuildName == "" || buildConfiguration.BuildNumber == "" {
 		return cliutils.PrintHelpAndReturnError("Build name and build number are expected as command arguments or environment variables.", c)
@@ -3442,17 +2744,13 @@ func offerConfig(c *cli.Context) (*config.ArtifactoryDetails, error) {
 		"Configuring JFrog CLI with these parameters now will save you having to include them as command options.\n"+
 		"You can also configure these parameters later using the 'jfrog rt c' command.\n"+
 		"Configure now?", cliutils.OfferConfig)
-	confirmed := cliutils.InteractiveConfirm(msg)
+	confirmed := cliutils.AskYesNo(msg, false)
 	if !confirmed {
 		config.SaveArtifactoryConf(make([]*config.ArtifactoryDetails, 0))
 		return nil, nil
 	}
-	details, err := createArtifactoryDetails(c, false)
-	if err != nil {
-		return nil, err
-	}
-	encPassword := c.BoolT("enc-password")
-	configCmd := commands.NewConfigCommand().SetDefaultDetails(details).SetInteractive(true).SetEncPassword(encPassword)
+	details := createArtifactoryDetailsFromOptions(c)
+	configCmd := commands.NewConfigCommand().SetDefaultDetails(details).SetInteractive(true).SetEncPassword(true)
 	err = configCmd.Config()
 	if err != nil {
 		return nil, err
@@ -3461,16 +2759,44 @@ func offerConfig(c *cli.Context) (*config.ArtifactoryDetails, error) {
 	return configCmd.RtDetails()
 }
 
-func createArtifactoryDetails(c *cli.Context, includeConfig bool) (details *config.ArtifactoryDetails, err error) {
-	if includeConfig {
-		details, err := offerConfig(c)
+func createArtifactoryDetailsWithConfigOffer(c *cli.Context, excludeRefreshableTokens bool) (*config.ArtifactoryDetails, error) {
+	createdDetails, err := offerConfig(c)
+	if err != nil {
+		return nil, err
+	}
+	if createdDetails != nil {
+		return createdDetails, err
+	}
+
+	details := createArtifactoryDetailsFromOptions(c)
+	// If urls or credentials were passed as options, use options as they are.
+	// For security reasons, we'd like to avoid using part of the connection details from command options and the rest from the config.
+	// Either use command options only or config only.
+	if credentialsChanged(details) {
+		return details, nil
+	}
+
+	// Else, use details from config for requested serverId, or for default server if empty.
+	confDetails, err := commands.GetConfig(details.ServerId, excludeRefreshableTokens)
+	if err != nil {
+		return nil, err
+	}
+
+	if !excludeRefreshableTokens {
+		err = config.CreateInitialRefreshableTokensIfNeeded(confDetails)
 		if err != nil {
 			return nil, err
 		}
-		if details != nil {
-			return details, err
-		}
 	}
+
+	// Take InsecureTls value from options since it is not saved in config.
+	confDetails.InsecureTls = details.InsecureTls
+	confDetails.Url = clientutils.AddTrailingSlashIfNeeded(confDetails.Url)
+	confDetails.DistributionUrl = clientutils.AddTrailingSlashIfNeeded(confDetails.DistributionUrl)
+	return confDetails, nil
+}
+
+func createArtifactoryDetailsFromOptions(c *cli.Context) (details *config.ArtifactoryDetails) {
 	details = new(config.ArtifactoryDetails)
 	details.Url = c.String("url")
 	details.DistributionUrl = c.String("dist-url")
@@ -3489,65 +2815,15 @@ func createArtifactoryDetails(c *cli.Context, includeConfig bool) (details *conf
 		details.Password = details.ApiKey
 		details.ApiKey = ""
 	}
-
-	if includeConfig && !credentialsChanged(details) {
-		confDetails, err := commands.GetConfig(details.ServerId)
-		if err != nil {
-			return nil, err
-		}
-
-		if details.Url == "" {
-			details.Url = confDetails.Url
-		}
-		if details.DistributionUrl == "" {
-			details.DistributionUrl = confDetails.DistributionUrl
-		}
-
-		if !isAuthMethodSet(details) {
-			if details.ApiKey == "" {
-				details.ApiKey = confDetails.ApiKey
-			}
-			if details.User == "" {
-				details.User = confDetails.User
-			}
-			if details.Password == "" {
-				details.Password = confDetails.Password
-			}
-			if details.SshKeyPath == "" {
-				details.SshKeyPath = confDetails.SshKeyPath
-			}
-			if details.AccessToken == "" {
-				details.AccessToken = confDetails.AccessToken
-			}
-			if details.RefreshToken == "" {
-				details.RefreshToken = confDetails.RefreshToken
-			}
-			if details.TokenRefreshInterval == cliutils.TokenRefreshDisabled {
-				details.TokenRefreshInterval = confDetails.TokenRefreshInterval
-			}
-			if details.ClientCertPath == "" {
-				details.ClientCertPath = confDetails.ClientCertPath
-			}
-			if details.ClientCertKeyPath == "" {
-				details.ClientCertKeyPath = confDetails.ClientCertKeyPath
-			}
-		}
-	}
 	details.Url = clientutils.AddTrailingSlashIfNeeded(details.Url)
 	details.DistributionUrl = clientutils.AddTrailingSlashIfNeeded(details.DistributionUrl)
-
-	err = config.CreateInitialRefreshTokensIfNeeded(details)
 	return
 }
 
 func credentialsChanged(details *config.ArtifactoryDetails) bool {
-	return details.Url != "" || details.User != "" || details.Password != "" ||
-		details.ApiKey != "" || details.SshKeyPath != "" || details.SshAuthHeaderSet() ||
-		details.AccessToken != ""
-}
-
-func isAuthMethodSet(details *config.ArtifactoryDetails) bool {
-	return (details.User != "" && details.Password != "") || details.SshKeyPath != "" || details.ApiKey != "" || details.AccessToken != ""
+	return details.Url != "" || details.DistributionUrl != "" || details.User != "" || details.Password != "" ||
+		details.ApiKey != "" || details.SshKeyPath != "" || details.SshPassphrase != "" || details.AccessToken != "" ||
+		details.ClientCertKeyPath != "" || details.ClientCertPath != ""
 }
 
 func getDebFlag(c *cli.Context) (deb string, err error) {
@@ -3677,7 +2953,7 @@ func createBuildInfoConfiguration(c *cli.Context) *buildinfocmd.Configuration {
 	}
 	// Allow to use `env-exclude=""` and get no filters
 	if flags.EnvExclude == "" {
-		flags.EnvExclude = "*password*;*secret*;*key*;*token*"
+		flags.EnvExclude = "*password*;*psw*;*secret*;*key*;*token*"
 	}
 	return flags
 }
@@ -3690,8 +2966,18 @@ func createBuildPromoteConfiguration(c *cli.Context) services.PromotionParams {
 	promotionParamsImpl.IncludeDependencies = c.Bool("include-dependencies")
 	promotionParamsImpl.Copy = c.Bool("copy")
 	promotionParamsImpl.Properties = c.String("props")
-	promotionParamsImpl.BuildName, promotionParamsImpl.BuildNumber = utils.GetBuildNameAndNumber(c.Args().Get(0), c.Args().Get(1))
-	promotionParamsImpl.TargetRepo = c.Args().Get(2)
+
+	// If the command received 3 args, read the build name, build number
+	// and target repo as ags.
+	buildName, buildNumber, targetRepo := c.Args().Get(0), c.Args().Get(1), c.Args().Get(2)
+	// But if the command received only one arg, the build name and build number
+	// are expected as env vars, and only the target repo is received as an arg.
+	if len(c.Args()) == 1 {
+		buildName, buildNumber, targetRepo = "", "", c.Args().Get(0)
+	}
+
+	promotionParamsImpl.BuildName, promotionParamsImpl.BuildNumber = utils.GetBuildNameAndNumber(buildName, buildNumber)
+	promotionParamsImpl.TargetRepo = targetRepo
 	return promotionParamsImpl
 }
 
@@ -3779,12 +3065,12 @@ func createDefaultDownloadSpec(c *cli.Context) (*spec.SpecFiles, error) {
 		IncludeDirs(c.Bool("include-dirs")).
 		Target(c.Args().Get(1)).
 		ArchiveEntries(c.String("archive-entries")).
+		ValidateSymlinks(c.Bool("validate-symlinks")).
 		BuildSpec(), nil
 }
 
 func createDownloadConfiguration(c *cli.Context) (downloadConfiguration *utils.DownloadConfiguration, err error) {
 	downloadConfiguration = new(utils.DownloadConfiguration)
-	downloadConfiguration.ValidateSymlink = c.Bool("validate-symlinks")
 	downloadConfiguration.MinSplitSize, err = getMinSplit(c)
 	if err != nil {
 		return nil, err
@@ -3942,18 +3228,20 @@ func createBuildConfigurationWithModule(c *cli.Context) (buildConfigConfiguratio
 
 func createConfigCommandConfiguration(c *cli.Context) (configCommandConfiguration *commands.ConfigCommandConfiguration, err error) {
 	configCommandConfiguration = new(commands.ConfigCommandConfiguration)
-	configCommandConfiguration.ArtDetails, err = createArtifactoryDetails(c, false)
-	if err != nil {
-		return
-	}
+	configCommandConfiguration.ArtDetails = createArtifactoryDetailsFromOptions(c)
 	configCommandConfiguration.EncPassword = c.BoolT("enc-password")
 	configCommandConfiguration.Interactive = cliutils.GetInteractiveValue(c)
+	configCommandConfiguration.BasicAuthOnly = c.Bool("basic-auth-only")
 	return
 }
 
 func validateConfigFlags(configCommandConfiguration *commands.ConfigCommandConfiguration) error {
 	if !configCommandConfiguration.Interactive && configCommandConfiguration.ArtDetails.Url == "" {
 		return errors.New("the --url option is mandatory when the --interactive option is set to false or the CI environment variable is set to true.")
+	}
+	// Validate the option is not used along an access token
+	if configCommandConfiguration.BasicAuthOnly && configCommandConfiguration.ArtDetails.AccessToken != "" {
+		return errors.New("the --basic-auth-only option is only supported when username and password/API key are provided")
 	}
 	return nil
 }
@@ -3998,6 +3286,7 @@ func overrideFieldsIfSet(spec *spec.File, c *cli.Context) {
 	overrideStringIfSet(&spec.Explode, c, "explode")
 	overrideStringIfSet(&spec.Regexp, c, "regexp")
 	overrideStringIfSet(&spec.IncludeDirs, c, "include-dirs")
+	overrideStringIfSet(&spec.ValidateSymlinks, c, "validate-symlinks")
 }
 
 func getOffsetAndLimitValues(c *cli.Context) (offset, limit int, err error) {

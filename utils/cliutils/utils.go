@@ -6,8 +6,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
+
+	serviceutils "github.com/jfrog/jfrog-client-go/artifactory/services/utils"
+	"github.com/jfrog/jfrog-client-go/utils/io/content"
 
 	"github.com/codegangsta/cli"
 	"github.com/jfrog/jfrog-cli/utils/summary"
@@ -118,9 +122,58 @@ func traceExit(exitCode ExitCode, err error) {
 	os.Exit(exitCode.Code)
 }
 
+type detailedSummaryRecord struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
 // Print summary report.
-// The given error will pass through and be returned as is if no other errors are raised.
-func PrintSummaryReport(success, failed int, err error) error {
+// a given non-nil error will pass through and be returned as is if no other errors are raised.
+// In case of a nil error, the current function error will be returned.
+func summaryPrintError(summaryError, originalError error) error {
+	if originalError != nil {
+		if summaryError != nil {
+			log.Error(summaryError)
+		}
+		return originalError
+	}
+	return summaryError
+}
+
+// If a resultReader is provided, we will iterate over the result and print a detailed summary including the affected files.
+func PrintSummaryReport(success, failed int, reader *content.ContentReader, rtUrl string, originalErr error) error {
+	basicSummary, mErr := CreateSummaryReportString(success, failed, originalErr)
+	if mErr != nil {
+		return summaryPrintError(mErr, originalErr)
+	}
+	// A reader wasn't provided, prints the basic summary json and return.
+	if reader == nil {
+		log.Output(basicSummary)
+		return summaryPrintError(mErr, originalErr)
+	}
+	reader.Reset()
+	defer reader.Close()
+	writer, mErr := content.NewContentWriter("files", false, true)
+	if mErr != nil {
+		log.Output(basicSummary)
+		return summaryPrintError(mErr, originalErr)
+	}
+	// We remove the closing curly bracket in order to append the affected files array using a responseWriter to write directly to stdout.
+	basicSummary = strings.TrimSuffix(basicSummary, "\n}") + ","
+	log.Output(basicSummary)
+	defer log.Output("}")
+	for file := new(serviceutils.FileInfo); reader.NextRecord(file) == nil; file = new(serviceutils.FileInfo) {
+		record := detailedSummaryRecord{
+			Source: rtUrl + file.ArtifactoryPath,
+			Target: file.LocalPath,
+		}
+		writer.Write(record)
+	}
+	mErr = writer.Close()
+	return summaryPrintError(mErr, originalErr)
+}
+
+func CreateSummaryReportString(success, failed int, err error) (string, error) {
 	summaryReport := summary.New(err)
 	summaryReport.Totals.Success = success
 	summaryReport.Totals.Failure = failed
@@ -129,11 +182,9 @@ func PrintSummaryReport(success, failed int, err error) error {
 	}
 	content, mErr := summaryReport.Marshal()
 	if errorutils.CheckError(mErr) != nil {
-		log.Error(mErr)
-		return err
+		return "", mErr
 	}
-	log.Output(utils.IndentJson(content))
-	return err
+	return utils.IndentJson(content), mErr
 }
 
 func PrintHelpAndReturnError(msg string, context *cli.Context) error {
@@ -176,24 +227,12 @@ func getCiValue() bool {
 	return ci
 }
 
-func InteractiveConfirm(message string) bool {
-	var confirm string
-	fmt.Print(message + " (y/n): ")
-	fmt.Scanln(&confirm)
-	return confirmAnswer(confirm)
-}
-
-func confirmAnswer(answer string) bool {
-	answer = strings.ToLower(answer)
-	return answer == "y" || answer == "yes"
-}
-
 func GetVersion() string {
 	return CliVersion
 }
 
 func GetConfigVersion() string {
-	return "1"
+	return "3"
 }
 
 func GetDocumentationMessage() string {
@@ -243,6 +282,10 @@ func varsAsMap(vars []string) map[string]string {
 
 func IsWindows() bool {
 	return runtime.GOOS == "windows"
+}
+
+func IsLinux() bool {
+	return runtime.GOOS == "linux"
 }
 
 // Return the path of CLI temp dir.
@@ -306,5 +349,73 @@ func GetJfrogSecurityDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(homeDir, "security"), nil
+	return filepath.Join(homeDir, JfrogSecurityDirName), nil
+}
+
+func GetJfrogCertsDir() (string, error) {
+	securityDir, err := GetJfrogSecurityDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(securityDir, JfrogCertsDirName), nil
+}
+
+func GetJfrogSecurityConfFilePath() (string, error) {
+	securityDir, err := GetJfrogSecurityDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(securityDir, JfrogSecurityConfFile), nil
+}
+
+func GetJfrogBackupDir() (string, error) {
+	homeDir, err := GetJfrogHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, JfrogBackupDirName), nil
+}
+
+// Ask a yes or no question, with a default answer.
+func AskYesNo(promptPrefix string, defaultValue bool) bool {
+	defStr := "[n]"
+	if defaultValue {
+		defStr = "[y]"
+	}
+	promptPrefix += " (y/n) " + defStr + "? "
+	var answer string
+	for {
+		fmt.Print(promptPrefix)
+		_, _ = fmt.Scanln(&answer)
+		parsed, valid := parseYesNo(answer, defaultValue)
+		if valid {
+			return parsed
+		}
+		fmt.Println("Please enter a valid option.")
+	}
+}
+
+func parseYesNo(s string, def bool) (ans, valid bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return def, true
+	}
+	matchedYes, err := regexp.MatchString("^yes$|^y$", strings.ToLower(s))
+	if errorutils.CheckError(err) != nil {
+		log.Error(err)
+		return matchedYes, false
+	}
+	if matchedYes {
+		return true, true
+	}
+
+	matchedNo, err := regexp.MatchString("^no$|^n$", strings.ToLower(s))
+	if errorutils.CheckError(err) != nil {
+		log.Error(err)
+		return matchedNo, false
+	}
+	if matchedNo {
+		return false, true
+	}
+	return false, false
 }

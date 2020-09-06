@@ -1,7 +1,13 @@
 package generic
 
 import (
+	"encoding/json"
 	"errors"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strconv"
+
 	"github.com/jfrog/jfrog-cli/artifactory/spec"
 	"github.com/jfrog/jfrog-cli/artifactory/utils"
 	"github.com/jfrog/jfrog-cli/utils/cliutils"
@@ -11,12 +17,9 @@ import (
 	clientutils "github.com/jfrog/jfrog-client-go/artifactory/services/utils"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
 	ioUtils "github.com/jfrog/jfrog-client-go/utils/io"
+	"github.com/jfrog/jfrog-client-go/utils/io/content"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
 	"github.com/jfrog/jfrog-client-go/utils/log"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 )
 
 type DownloadCommand struct {
@@ -53,8 +56,8 @@ func (dc *DownloadCommand) CommandName() string {
 }
 
 func (dc *DownloadCommand) Run() error {
-	if dc.SyncDeletesPath() != "" && !dc.Quiet() && !cliutils.InteractiveConfirm("Sync-deletes may delete some files in your local file system. Are you sure you want to continue?\n"+
-		"You can avoid this confirmation message by adding --quiet to the command.") {
+	if dc.SyncDeletesPath() != "" && !dc.Quiet() && !cliutils.AskYesNo("Sync-deletes may delete some files in your local file system. Are you sure you want to continue?\n"+
+		"You can avoid this confirmation message by adding --quiet to the command.", false) {
 		return nil
 	}
 	// Initialize Progress bar, set logger to a log file
@@ -95,14 +98,30 @@ func (dc *DownloadCommand) Run() error {
 		downloadParamsArray = append(downloadParamsArray, downParams)
 	}
 	// Perform download.
-	filesInfo, totalExpected, err := servicesManager.DownloadFiles(downloadParamsArray...)
+	// In case of build-info collection/sync-deletes operation/a detailed summary is required, we use the download service which provides results file reader,
+	// otherwise we use the download service which provides only general counters.
+	var totalDownloaded, totalExpected int
+	var resultsReader *content.ContentReader = nil
+	if isCollectBuildInfo || dc.SyncDeletesPath() != "" || dc.DetailedSummary() {
+		resultsReader, totalDownloaded, totalExpected, err = servicesManager.DownloadFilesWithResultReader(downloadParamsArray...)
+		dc.result.SetReader(resultsReader)
+	} else {
+		totalDownloaded, totalExpected, err = servicesManager.DownloadFiles(downloadParamsArray...)
+	}
 	if err != nil {
 		errorOccurred = true
 		log.Error(err)
 	}
-
-	dc.result.SetSuccessCount(len(filesInfo))
-	dc.result.SetFailCount(totalExpected - len(filesInfo))
+	dc.result.SetSuccessCount(totalDownloaded)
+	dc.result.SetFailCount(totalExpected - totalDownloaded)
+	// If the 'details summary' was requested, then the reader should not be closed now.
+	// It will be closed after it will be used to generate the summary.
+	if resultsReader != nil && !dc.DetailedSummary() {
+		defer func() {
+			resultsReader.Close()
+			dc.result.SetReader(nil)
+		}()
+	}
 	// Check for errors.
 	if errorOccurred {
 		return errors.New("Download finished with errors, please review the logs.")
@@ -117,7 +136,13 @@ func (dc *DownloadCommand) Run() error {
 			return errorutils.CheckError(err)
 		}
 		if _, err = os.Stat(absSyncDeletesPath); err == nil {
-			walkFn := createSyncDeletesWalkFunction(filesInfo)
+			// Unmarshal the local paths of the downloaded files from the results file reader
+			tmpRoot, err := createDownloadResultEmptyTmpReflection(resultsReader)
+			defer fileutils.RemoveTempDir(tmpRoot)
+			if err != nil {
+				return err
+			}
+			walkFn := createSyncDeletesWalkFunction(tmpRoot)
 			err = fileutils.Walk(dc.SyncDeletesPath(), walkFn, false)
 			if err != nil {
 				return errorutils.CheckError(err)
@@ -126,11 +151,20 @@ func (dc *DownloadCommand) Run() error {
 			log.Info("Sync-deletes path", absSyncDeletesPath, "does not exists.")
 		}
 	}
-	log.Debug("Downloaded", strconv.Itoa(len(filesInfo)), "artifacts.")
+	log.Debug("Downloaded", strconv.Itoa(totalDownloaded), "artifacts.")
 
 	// Build Info
 	if isCollectBuildInfo {
-		buildDependencies := convertFileInfoToBuildDependencies(filesInfo)
+		// Unmarshal all info of the downloaded files from the results file reader
+		file, err := os.Open(resultsReader.GetFilePath())
+		if err != nil {
+			return errorutils.CheckError(err)
+		}
+		byteValue, _ := ioutil.ReadAll(file)
+		file.Close()
+		var downloaded downlodedBuildInfo
+		err = json.Unmarshal(byteValue, &downloaded)
+		buildDependencies := convertFileInfoToBuildDependencies(downloaded.FilesInfo)
 		populateFunc := func(partial *buildinfo.Partial) {
 			partial.Dependencies = buildDependencies
 			partial.ModuleId = dc.buildConfiguration.Module
@@ -159,9 +193,9 @@ func getDownloadParams(f *spec.File, configuration *utils.DownloadConfiguration)
 	downParams = services.NewDownloadParams()
 	downParams.ArtifactoryCommonParams = f.ToArtifactoryCommonParams()
 	downParams.Symlink = configuration.Symlink
-	downParams.ValidateSymlink = configuration.ValidateSymlink
 	downParams.MinSplitSize = configuration.MinSplitSize
 	downParams.SplitCount = configuration.SplitCount
+	downParams.Retries = configuration.Retries
 
 	downParams.Recursive, err = f.IsRecursive(true)
 	if err != nil {
@@ -183,28 +217,59 @@ func getDownloadParams(f *spec.File, configuration *utils.DownloadConfiguration)
 		return
 	}
 
+	downParams.ValidateSymlink, err = f.IsVlidateSymlinks(false)
+	if err != nil {
+		return
+	}
+
 	return
 }
 
-func createSyncDeletesWalkFunction(downloadedFiles []clientutils.FileInfo) fileutils.WalkFunc {
+// We will create the same downloaded hierarchies under a temp dirctory with 0-size files.
+// We will use this "empty reflection" of the download operation to determine whether a file was downloded or not while walking the real filesystem from sync-deletes root.
+func createDownloadResultEmptyTmpReflection(reader *content.ContentReader) (tmpRoot string, err error) {
+	tmpRoot, err = fileutils.CreateTempDir()
+	if errorutils.CheckError(err) != nil {
+		return
+	}
+	for path := new(localPath); reader.NextRecord(path) == nil; path = new(localPath) {
+		var absDownlaodPath string
+		absDownlaodPath, err = filepath.Abs(path.LocalPath)
+		if errorutils.CheckError(err) != nil {
+			return
+		}
+		tmpFilePath := filepath.Join(tmpRoot, absDownlaodPath)
+		tmpFileRoot := filepath.Dir(tmpFilePath)
+		err = os.MkdirAll(tmpFileRoot, os.ModePerm)
+		if errorutils.CheckError(err) != nil {
+			return
+		}
+		var tmpFile *os.File
+		tmpFile, err = os.Create(tmpFilePath)
+		if errorutils.CheckError(err) != nil {
+			return
+		}
+		err = tmpFile.Close()
+		if errorutils.CheckError(err) != nil {
+			return
+		}
+	}
+	return
+}
+
+func createSyncDeletesWalkFunction(tempRoot string) fileutils.WalkFunc {
 	return func(path string, info os.FileInfo, err error) error {
 		// Convert path to absolute path
 		path, err = filepath.Abs(path)
 		if errorutils.CheckError(err) != nil {
 			return err
 		}
-		// Go over the downloaded files list
-		for _, file := range downloadedFiles {
-			// If the current path is a prefix of a downloaded file - we won't delete it.
-			fileAbsPath, err := filepath.Abs(file.LocalPath)
-			if errorutils.CheckError(err) != nil {
-				return err
-			}
-			if strings.HasPrefix(fileAbsPath, path) {
-				return nil
-			}
+		// Join the current absolute path to the temp root provided.
+		tmpFilePath := filepath.Join(tempRoot, path)
+		// If the path exists under the temp root directory, it means it's been downloaded during the last operations, and cannot be deleted.
+		if fileutils.IsPathExists(tmpFilePath, false) {
+			return nil
 		}
-		// The current path is not a prefix of any downloaded file so it should be deleted
 		log.Info("Deleting:", path)
 		if info.IsDir() {
 			// If current path is a dir - remove all content and return SkipDir to stop walking this path
@@ -219,4 +284,16 @@ func createSyncDeletesWalkFunction(downloadedFiles []clientutils.FileInfo) fileu
 
 		return errorutils.CheckError(err)
 	}
+}
+
+type downlodedBuildInfo struct {
+	FilesInfo []clientutils.FileInfo `json:"results,omitempty"`
+}
+
+type downlodedInfo struct {
+	DownlodedFiles []localPath `json:"results,omitempty"`
+}
+
+type localPath struct {
+	LocalPath string `json:"localPath,omitempty"`
 }

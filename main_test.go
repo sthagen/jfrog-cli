@@ -2,16 +2,18 @@ package main
 
 import (
 	"flag"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	commandUtils "github.com/jfrog/jfrog-cli/artifactory/commands/utils"
 	artifactoryUtils "github.com/jfrog/jfrog-cli/artifactory/utils"
 	"github.com/jfrog/jfrog-cli/utils/cliutils"
-	"github.com/jfrog/jfrog-cli/utils/config"
 	"github.com/jfrog/jfrog-cli/utils/log"
+
 	"github.com/jfrog/jfrog-cli/utils/tests"
 	"github.com/jfrog/jfrog-client-go/artifactory/buildinfo"
 	"github.com/jfrog/jfrog-client-go/utils"
@@ -29,9 +31,9 @@ func setupIntegrationTests() {
 	os.Setenv(cliutils.ReportUsage, "false")
 	// Disable progress bar and confirmation messages.
 	os.Setenv(cliutils.CI, "true")
+
 	flag.Parse()
 	log.SetDefaultLogger()
-
 	if *tests.TestBintray {
 		InitBintrayTests()
 	}
@@ -42,7 +44,7 @@ func setupIntegrationTests() {
 		InitBuildToolsTests()
 	}
 	if *tests.TestDocker {
-		initArtifactoryCli()
+		InitDockerTests()
 	}
 	if *tests.TestDistribution {
 		InitDistributionTests()
@@ -56,7 +58,7 @@ func tearDownIntegrationTests() {
 	if *tests.TestArtifactory && !*tests.TestArtifactoryProxy {
 		CleanArtifactoryTests()
 	}
-	if *tests.TestNpm || *tests.TestGradle || *tests.TestMaven || *tests.TestGo || *tests.TestNuget || *tests.TestPip {
+	if *tests.TestNpm || *tests.TestGradle || *tests.TestMaven || *tests.TestGo || *tests.TestNuget || *tests.TestPip || *tests.TestDocker {
 		CleanBuildToolsTests()
 	}
 	if *tests.TestDistribution {
@@ -66,31 +68,37 @@ func tearDownIntegrationTests() {
 
 func InitBuildToolsTests() {
 	initArtifactoryCli()
-	createReposIfNeeded()
+	cleanUpOldBuilds()
+	cleanUpOldRepositories()
+	tests.AddTimestampToGlobalVars()
+	createRequiredRepos()
 	cleanBuildToolsTest()
 }
 
 func CleanBuildToolsTests() {
 	cleanBuildToolsTest()
-	deleteRepos()
+	deleteCreatedRepos()
 }
 
-func createJfrogHomeConfig(t *testing.T) {
-	templateConfigPath := filepath.Join(filepath.FromSlash(tests.GetTestResourcesPath()), "configtemplate", config.JfrogConfigFile)
+func createJfrogHomeConfig(t *testing.T, encryptPassword bool) {
 	wd, err := os.Getwd()
 	assert.NoError(t, err)
 	err = os.Setenv(cliutils.HomeDir, filepath.Join(wd, tests.Out, "jfroghome"))
 	assert.NoError(t, err)
-	jfrogHomePath, err := cliutils.GetJfrogHomeDir()
-	assert.NoError(t, err)
-	_, err = tests.ReplaceTemplateVariables(templateConfigPath, jfrogHomePath)
+	var credentials string
+	if *tests.RtAccessToken != "" {
+		credentials = "--access-token=" + *tests.RtAccessToken
+	} else {
+		credentials = "--user=" + *tests.RtUser + " --password=" + *tests.RtPassword
+	}
+	err = tests.NewJfrogCli(execMain, "jfrog rt", credentials).Exec("c", "default", "--interactive=false", "--url="+*tests.RtUrl, "--enc-password="+strconv.FormatBool(encryptPassword))
 	assert.NoError(t, err)
 }
 
 func prepareHomeDir(t *testing.T) (string, string) {
 	oldHomeDir := os.Getenv(cliutils.HomeDir)
 	// Populate cli config with 'default' server
-	createJfrogHomeConfig(t)
+	createJfrogHomeConfig(t, true)
 	newHomeDir, err := cliutils.GetJfrogHomeDir()
 	assert.NoError(t, err)
 	return oldHomeDir, newHomeDir
@@ -99,7 +107,6 @@ func prepareHomeDir(t *testing.T) (string, string) {
 func cleanBuildToolsTest() {
 	if *tests.TestNpm || *tests.TestGradle || *tests.TestMaven || *tests.TestGo || *tests.TestNuget || *tests.TestPip {
 		os.Unsetenv(cliutils.HomeDir)
-		cleanArtifactory()
 		tests.CleanFileSystem()
 	}
 }

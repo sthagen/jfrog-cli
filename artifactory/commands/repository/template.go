@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"strings"
 
 	"github.com/c-bata/go-prompt"
 	"github.com/jfrog/jfrog-cli/artifactory/commands/utils"
 	"github.com/jfrog/jfrog-cli/utils/config"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
-	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
 	"github.com/jfrog/jfrog-client-go/utils/log"
 )
 
@@ -164,7 +162,7 @@ const (
 	ComposerDefaultRepoLayout = "composer-default"
 	ConanDefaultRepoLayout    = "conan-default"
 	GoDefaultRepoLayout       = "go-default"
-	GradleDefaultRepoLayout   = "gradle-default"
+	GradleDefaultRepoLayout   = "maven-2-default"
 	IvyDefaultRepoLayout      = "ivy-default"
 	Maven1DefaultRepoLayout   = "maven-1-default"
 	Maven2DefaultRepoLayout   = "maven-2-default"
@@ -478,21 +476,10 @@ func (rtc *RepoTemplateCommand) RtDetails() (*config.ArtifactoryDetails, error) 
 }
 
 func (rtc *RepoTemplateCommand) Run() (err error) {
-	exists, err := fileutils.IsDirExists(rtc.path, true)
+	err = utils.ValidateTemplatePath(rtc.path)
 	if err != nil {
-		return errorutils.CheckError(err)
+		return
 	}
-	if exists || strings.HasSuffix(rtc.path, string(os.PathSeparator)) {
-		return errorutils.CheckError(errors.New("path cannot be a directory," + PathErrorSuffixMsg))
-	}
-	exists, err = fileutils.IsFileExists(rtc.path, true)
-	if err != nil {
-		return errorutils.CheckError(err)
-	}
-	if exists {
-		return errorutils.CheckError(errors.New("file already exists," + PathErrorSuffixMsg))
-	}
-
 	repoTemplateQuestionnaire := &utils.InteractiveQuestionnaire{
 		MandatoryQuestionsKeys: []string{TemplateType, Key, Rclass},
 		QuestionsMap:           questionMap,
@@ -660,17 +647,17 @@ func contentSynchronisationCallBack(iq *utils.InteractiveQuestionnaire, answer s
 	if err != nil {
 		return "", nil
 	}
-	answer += "," + utils.AskFromList("", "Insert the value for statistic.enable >", false, utils.GetBoolSuggests())
+	answer += "," + utils.AskFromList("", "Insert the value for statistic.enable >", false, utils.GetBoolSuggests(), "")
 	//cs.Statistics.Enabled, err = strconv.ParseBool(enabled)
 	if err != nil {
 		return "", nil
 	}
-	answer += "," + utils.AskFromList("", "Insert the value for properties.enable >", false, utils.GetBoolSuggests())
+	answer += "," + utils.AskFromList("", "Insert the value for properties.enable >", false, utils.GetBoolSuggests(), "")
 	//cs.Properties.Enabled, err = strconv.ParseBool(enabled)
 	if err != nil {
 		return "", nil
 	}
-	answer += "," + utils.AskFromList("", "Insert the value for source.originAbsenceDetection >", false, utils.GetBoolSuggests())
+	answer += "," + utils.AskFromList("", "Insert the value for source.originAbsenceDetection >", false, utils.GetBoolSuggests(), "")
 	//cs.Source.OriginAbsenceDetection, err = strconv.ParseBool(enabled)
 	if err != nil {
 		return "", nil

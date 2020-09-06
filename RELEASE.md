@@ -1,3 +1,77 @@
+## 1.39.3 (September 3, 2020)
+- Bug fix - missing defer close after using AQL service.
+
+## 1.39.2 (August 29, 2020)
+- Bug fix - "jfrog rt u" with --sync-deletes deletes wrong folders.
+
+## 1.39.1 (August 24, 2020)
+- Bug fix - "jfrog rt release-bundle-create" and "jfrog rt release-bundle-update" fail when used with file spec which includes "aql".
+
+## 1.39.0 (August 16, 2020)
+- New docker promote command.
+- New Permission Target commands - Interactive template, create, update and delete.
+- Update alpine to version 3.12.0 in docker image.
+- Show command flag names sorted.
+- Improved search infrastructure.
+
+## 1.38.4 (August 10, 2020)
+- Bug fix - "panic: Logger not initialized" error can be thrown when the config is empty.
+
+## 1.38.3 (August 5, 2020)
+- Bug fix - The "jfrog rt replication-template" command creates a template with a wrong target URL.
+
+## 1.38.2 (July 20, 2020)
+- Bug fix - Fix an issue with JFrog CLI's npm installer
+
+## 1.38.1 (July 19, 2020)
+- Bug fix - Username must be lowercase since version 1.38.0
+- JFrog CLI build dir restructure
+
+## 1.38.0 (June 30, 2020)
+- "jfrog rt release-bundle-distribute" - New --sync and --max-wait-minutes command options.
+- "Changing access tokens hourly" is now enabled by default.
+- Distribution commands - new --insecure-tls option.
+- "jfrog rt pip" - support for remote repositories.
+- Bug fix - "jfrog rt npm-ci" - Fix command help and logging.
+- Bug fix - Reintroduce --insecure-tls option to the "jfrog rt c" command.
+- Bug fix - "jfrog rt build-publish --dry-run" deletes the locak build-info.
+- Bug fix - "jfrog rt set-props" does not support path with special characters.
+
+## 1.37.1 (June 15, 2020)
+- "jfrog rt nuget" - Support running NuGet on Ubuntu. even if used without mono.
+- New "jfrog bt maven-central-sync" command.
+
+## 1.37.0 (June 9, 2020)
+- New sensitive data encryption functionality
+- "jfrog rt dotnet" - Support .Net Framework versions prior to 3.1.200
+- Add curl and disable interactive prompts in the Docerfile
+- Bug fix - JFrog CLI should use "mono" automatically when running NuGet on Linux.
+- Bug fix - The changing tokens functionality should be disabled for external tools.
+- Bug fix - Support downloading files which use non-ASCII characters in their name.
+- Bug fix - Support placeholders use in repository name for download, move and copy.
+
+## 1.36.0 (May 25, 2020)
+- "jfrog rt download" - New --details-summary option
+- New "jfrog rt dotnet" command supporting .net core CLI support
+- "jfrog rt nuget" - support for Linux and MacOS
+- New "jfrog rt access-token-create" command
+- "jfrog rt download" - Added support for validateSymlinks via file spec
+- "jfrog rt search" now also returns SHA1 and MD5
+- "jfrog rt build-publish" - The default value of the --env-include option was extended to also include '***psw***'
+- Add deployment path to the build-info
+- Bug fix - "jfrog rt nuget" does not collect build for all .net project structures
+- Breaking change - "pip-config", "nuget-config" - remove redundant flags: --server-id-deploy, --repo-deploy.
+
+## 1.35.5 (May 13, 2020)
+- Bug fix - Out of range for docker duplicate layers.
+- Bug fix - 'jfrog rt bpr' fails with build params as env vars
+
+## 1.35.4 (May 12, 2020)
+- Bug fix - The “jfrog rt docker-push” command may duplicate artifacts added to the build-info, which can cause build-promotion to fail.
+- Bug fix - The “jfrog rt docker-pull” command cannot collect build-info when pulling from a remote repo.
+- Bug fix - VCS props are not added when uploading only one file.
+- Bug fix - add retries to download/upload params
+
 ## 1.35.3 (Mar 30, 2020)
 - Bug fix - Command arguments and options wrapped with quotes are not parsed properly.
 
@@ -9,13 +83,13 @@
 ## 1.35.1 (Mar 18, 2020)
 - Bug fix - "jfrog rt npm-publish" can publish an incorrect module name.
 - Bug fix - The --insecure-tls option is missing for "jfrog rt mvn",
-- Bug fix - The replication-create and replication-delete commands are missing.  
+- Bug fix - The replication-create and replication-delete commands are missing.
 
 ## 1.35.0 (Mar 17, 2020)
 - New repo-create, repo-update and repo-delete commands for Artifactory.
 - New replication-create and replication-delete commands for Artifactory.
-- "jfriog rt mvn" and "jfrog rt gradle" now support parallel deployment. 
-- "jfrog rt mvn" - New --insecure-tls option. 
+- "jfriog rt mvn" and "jfrog rt gradle" now support parallel deployment.
+- "jfrog rt mvn" - New --insecure-tls option.
 - New commands - release-bundle-create, release-bundle-update, release-bundle-sign, release-bundle-distribute, release-bundle-delete
 - "jfrog rt delete" now includes a new --threads option.
 - "jfrog rt docker-pull" now supports docker fat manifest.
@@ -27,9 +101,9 @@
 - Improve URL masking reg exp.
 
 ## 1.34.0 (Feb 27, 2020)
-- Allow filtering files by Release Bundle, when searching, downloading, moving, etc. 
+- Allow filtering files by Release Bundle, when searching, downloading, moving, etc.
 - 'exclude-patterns' file spec property and command option is deprecated and replaced by 'exclusions'.
-- Allow non-interactive usage of the npm-config, maven-config, gradle-config, nuget-config and go-config commands. 
+- Allow non-interactive usage of the npm-config, maven-config, gradle-config, nuget-config and go-config commands.
 - Disable all interactive prompts when CI=true
 - New --client-cert-path and --client-cert-key-path options added to the "jfrog rt c" command.
 - New --target option added to the "jfrog xr offline-update" command.
@@ -40,7 +114,7 @@
 - The pip-deps-tree command was removed.
 
 ## 1.33.2 (Jan 27, 2020)
-- Bug fix - The "jfrog rt build-scan" command returns exit code 0 in case of a timeout. 
+- Bug fix - The "jfrog rt build-scan" command returns exit code 0 in case of a timeout.
 - Bug fix - The --help option is not working for some commands.
 
 ## 1.33.1 (Jan 16, 2020)
@@ -54,8 +128,8 @@
 - Validate the minimum supported version of the docker client.
 - Bug fix - Build tools config commands do not fetch local repositories.
 - Bug fix - Config created by "jfrog rt gradlec" is invalid.
-- Bug fix - Do not remove all parenthesis from path on Artifactory upload.  
-- Bug fix - Wrong command name in mvnc help. 
+- Bug fix - Do not remove all parenthesis from path on Artifactory upload.
+- Bug fix - Wrong command name in mvnc help.
 
 ## 1.32.4 (Dec 23, 2019)
 - Update jfrog-client-go version to v0.6.3
@@ -98,7 +172,7 @@
 ## 1.30.1 (Oct 31, 2019)
 - Added support for File Specs for the "jfrog rt set-props" and "jfrog rt delete-props".
 - Bug fix - "jfrog rt upload" does not upload when the path includes "..".
-- Bug fix - "jfrog rt download" - sync-deletes does not delete when the path is "./" 
+- Bug fix - "jfrog rt download" - sync-deletes does not delete when the path is "./"
 
 ## 1.30.0 (Oct 24, 2019)
 - New --sync-deletes option added to the "jfrog rt download" command.

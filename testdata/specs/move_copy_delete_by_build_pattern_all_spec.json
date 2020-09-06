@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "pattern": "*",
+      "target": "${REPO2}/",
+      "flat": "false",
+      "build": "${BUILD_NAME1}/10"
+    }
+  ]
+}

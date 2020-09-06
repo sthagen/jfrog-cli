@@ -6,9 +6,9 @@ require (
 	github.com/buger/jsonparser v0.0.0-20180910192245-6acdf747ae99
 	github.com/c-bata/go-prompt v0.2.3
 	github.com/codegangsta/cli v1.20.0
-	github.com/jfrog/gocmd v0.1.13
+	github.com/jfrog/gocmd v0.1.15
 	github.com/jfrog/gofrog v1.0.6
-	github.com/jfrog/jfrog-client-go v0.9.1
+	github.com/jfrog/jfrog-client-go v0.13.2
 	github.com/magiconair/properties v1.8.0
 	github.com/mattn/go-colorable v0.1.6 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
@@ -29,4 +29,4 @@ require (
 
 // replace github.com/jfrog/gocmd => github.com/jfrog/gocmd master
 
-// replace github.com/jfrog/gofrog => github.com/jfrog/gofrog dev
+// replace github.com/jfrog/gofrog => github.com/jfrog/gofrog v1.0.6
