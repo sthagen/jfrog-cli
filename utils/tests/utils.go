@@ -5,6 +5,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/jfrog/jfrog-client-go/artifactory/buildinfo"
+	"github.com/jfrog/jfrog-client-go/artifactory/services"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -15,12 +17,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jfrog/jfrog-cli/artifactory/commands/generic"
-	"github.com/jfrog/jfrog-cli/artifactory/spec"
-	artUtils "github.com/jfrog/jfrog-cli/artifactory/utils"
-	"github.com/jfrog/jfrog-cli/utils/cliutils"
-	"github.com/jfrog/jfrog-cli/utils/config"
+	corelog "github.com/jfrog/jfrog-cli-core/utils/log"
 
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/generic"
+	"github.com/jfrog/jfrog-cli-core/artifactory/spec"
+	artUtils "github.com/jfrog/jfrog-cli-core/artifactory/utils"
+	"github.com/jfrog/jfrog-cli-core/utils/config"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/jfrog/jfrog-client-go/artifactory/services/utils"
@@ -53,11 +56,13 @@ var TestGradle *bool
 var TestMaven *bool
 var DockerRepoDomain *string
 var DockerVirtualRepo *string
+var DockerRemoteRepo *string
 var DockerTargetRepo *string
 var TestNuget *bool
 var HideUnitTestLog *bool
 var TestPip *bool
 var PipVirtualEnv *string
+var TestPlugins *bool
 
 func init() {
 	RtUrl = flag.String("rt.url", "http://127.0.0.1:8081/artifactory/", "Artifactory url")
@@ -83,11 +88,13 @@ func init() {
 	TestMaven = flag.Bool("test.maven", false, "Test Maven")
 	DockerRepoDomain = flag.String("rt.dockerRepoDomain", "", "Docker repository domain")
 	DockerVirtualRepo = flag.String("rt.dockerVirtualRepo", "", "Docker virtual repo")
+	DockerRemoteRepo = flag.String("rt.dockerRemoteRepo", "", "Docker remote repo")
 	DockerTargetRepo = flag.String("rt.dockerTargetRepo", "", "Docker local repo")
 	TestNuget = flag.Bool("test.nuget", false, "Test Nuget")
 	HideUnitTestLog = flag.Bool("test.hideUnitTestLog", false, "Hide unit tests logs and print it in a file")
 	TestPip = flag.Bool("test.pip", false, "Test Pip")
 	PipVirtualEnv = flag.String("rt.pipVirtualEnv", "", "Pip virtual-environment path")
+	TestPlugins = flag.Bool("test.plugins", false, "Test Plugins")
 }
 
 func CleanFileSystem() {
@@ -185,7 +192,7 @@ func GetFilePathForArtifactory(fileName string) string {
 }
 
 func GetTestsLogsDir() (string, error) {
-	tempDirPath := filepath.Join(cliutils.GetCliPersistentTempDirPath(), "jfrog_tests_logs")
+	tempDirPath := filepath.Join(coreutils.GetCliPersistentTempDirPath(), "jfrog_tests_logs")
 	return tempDirPath, fileutils.CreateDirIfNotExist(tempDirPath)
 }
 
@@ -221,7 +228,7 @@ func (cli *JfrogCli) Exec(args ...string) error {
 			continue
 		}
 		args := strings.Split(v, spaceSplit)
-		os.Args = append(os.Args, args...)
+		os.Args = append(os.Args, v)
 		output = append(output, args...)
 	}
 	if cli.credentials != "" {
@@ -286,41 +293,6 @@ func (m *gitManager) execGit(args ...string) (string, string, error) {
 	return strings.TrimSpace(stdout.String()), strings.TrimSpace(stderr.String()), err
 }
 
-// Prepare the .git environment for the test. Takes an existing folder and making it .git dir.
-// sourceDirPath - Relative path to the source dir to change to .git
-// targetDirPath - Relative path to the target created .git dir, usually 'testdata' under the parent dir.
-func PrepareDotGitDir(t *testing.T, sourceDirPath, targetDirPath string) (string, string) {
-	// Get path to create .git folder in
-	baseDir, _ := os.Getwd()
-	baseDir = filepath.Join(baseDir, targetDirPath)
-	// Create .git path and make sure it is clean
-	dotGitPath := filepath.Join(baseDir, ".git")
-	RemovePath(dotGitPath, t)
-	// Get the path of the .git candidate path
-	dotGitPathTest := filepath.Join(baseDir, sourceDirPath)
-	// Rename the .git candidate
-	RenamePath(dotGitPathTest, dotGitPath, t)
-	return baseDir, dotGitPath
-}
-
-// Removing the provided path from the filesystem
-func RemovePath(testPath string, t *testing.T) {
-	err := fileutils.RemovePath(testPath)
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-}
-
-// Renaming from old path to new path.
-func RenamePath(oldPath, newPath string, t *testing.T) {
-	err := fileutils.RenamePath(oldPath, newPath)
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-}
-
 func DeleteFiles(deleteSpec *spec.SpecFiles, artifactoryDetails *config.ArtifactoryDetails) (successCount, failCount int, err error) {
 	deleteCommand := generic.NewDeleteCommand()
 	deleteCommand.SetThreads(3).SetSpec(deleteSpec).SetRtDetails(artifactoryDetails).SetDryRun(false)
@@ -330,6 +302,18 @@ func DeleteFiles(deleteSpec *spec.SpecFiles, artifactoryDetails *config.Artifact
 	}
 	defer reader.Close()
 	return deleteCommand.DeleteFiles(reader)
+}
+
+// This function makes no assertion, caller is responsible to assert as needed.
+func GetBuildInfo(artDetails *config.ArtifactoryDetails, buildName, buildNumber string) (pbi *buildinfo.PublishedBuildInfo, found bool, err error) {
+	servicesManager, err := artUtils.CreateServiceManager(artDetails, false)
+	if err != nil {
+		return nil, false, err
+	}
+	params := services.NewBuildInfoParams()
+	params.BuildName = buildName
+	params.BuildNumber = buildNumber
+	return servicesManager.GetBuildInfo(params)
 }
 
 var reposConfigMap = map[*string]string{
@@ -425,7 +409,7 @@ func GetAllRepositoriesNames() []string {
 
 func GetBuildNames() []string {
 	buildNamesMap := map[*bool][]*string{
-		TestArtifactory:  {&RtBuildName1, &RtBuildName2},
+		TestArtifactory:  {&RtBuildName1, &RtBuildName2, &RtBuildNameWithSpecialChars},
 		TestDistribution: {},
 		TestDocker:       {&DockerBuildName},
 		TestGo:           {&GoBuildName},
@@ -502,6 +486,7 @@ func AddTimestampToGlobalVars() {
 
 	// Builds/bundles/images
 	BundleName += timestampSuffix
+	DockerBuildName += timestampSuffix
 	DockerImageName += timestampSuffix
 	DotnetBuildName += timestampSuffix
 	GoBuildName += timestampSuffix
@@ -511,6 +496,7 @@ func AddTimestampToGlobalVars() {
 	PipBuildName += timestampSuffix
 	RtBuildName1 += timestampSuffix
 	RtBuildName2 += timestampSuffix
+	RtBuildNameWithSpecialChars += timestampSuffix
 }
 
 func ReplaceTemplateVariables(path, destPath string) (string, error) {
@@ -602,4 +588,15 @@ func CleanUpOldItems(baseItemNames []string, getActualItems func() ([]string, er
 			}
 		}
 	}
+}
+
+// Set new logger with output redirection to a buffer.
+// Caller is responsible to set the old log back.
+func RedirectLogOutputToBuffer() (buffer *bytes.Buffer, previousLog log.Log) {
+	previousLog = log.Logger
+	newLog := log.NewLogger(corelog.GetCliLogLevel(), nil)
+	buffer = &bytes.Buffer{}
+	newLog.SetOutputWriter(buffer)
+	log.SetLogger(newLog)
+	return buffer, previousLog
 }

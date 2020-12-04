@@ -1,7 +1,8 @@
 package main
 
 import (
-	"github.com/jfrog/jfrog-cli/utils/cliutils"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
+	coreTests "github.com/jfrog/jfrog-cli-core/utils/tests"
 	"github.com/jfrog/jfrog-cli/utils/tests"
 	"github.com/jfrog/jfrog-client-go/utils/log"
 	clientTests "github.com/jfrog/jfrog-client-go/utils/tests"
@@ -22,23 +23,15 @@ func TestUnitTests(t *testing.T) {
 		os.Exit(1)
 	}
 
-	setJfrogHome(homePath)
-	packages := clientTests.GetTestPackages("./...")
-	packages = clientTests.ExcludeTestsPackage(packages, CliIntegrationTests)
-	clientTests.RunTests(packages, *tests.HideUnitTestLog)
-	cleanUnitTestsJfrogHome(homePath)
-}
-
-func setJfrogHome(homePath string) {
-	if err := os.Setenv(cliutils.HomeDir, homePath); err != nil {
+	oldHome, err := coreTests.SetJfrogHome(homePath)
+	if err != nil {
 		log.Error(err)
 		os.Exit(1)
 	}
-}
+	defer os.Setenv(coreutils.HomeDir, oldHome)
 
-func cleanUnitTestsJfrogHome(homePath string) {
-	os.RemoveAll(homePath)
-	if err := os.Unsetenv(cliutils.HomeDir); err != nil {
-		os.Exit(1)
-	}
+	packages := clientTests.GetTestPackages("./...")
+	packages = clientTests.ExcludeTestsPackage(packages, CliIntegrationTests)
+	clientTests.RunTests(packages, *tests.HideUnitTestLog)
+	coreTests.CleanUnitTestsJfrogHome(homePath)
 }

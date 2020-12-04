@@ -1,12 +1,13 @@
 node("docker") {
     cleanWs()
     def architectures = [
-            [pkg: 'jfrog-cli-windows-amd64', goos: 'windows', goarch: 'amd64', fileExtention: '.exe'],
+            [pkg: 'jfrog-cli-windows-amd64', goos: 'windows', goarch: 'amd64', fileExtention: '.exe', chocoImage: 'linuturk/mono-choco'],
             [pkg: 'jfrog-cli-linux-386', goos: 'linux', goarch: '386', fileExtention: '', debianImage: 'i386/ubuntu:19.10', debianArch: 'i386'],
             [pkg: 'jfrog-cli-linux-amd64', goos: 'linux', goarch: 'amd64', fileExtention: '', debianImage: 'ubuntu:19.10', debianArch: 'x86_64', rpmImage: 'centos:8'],
             [pkg: 'jfrog-cli-linux-arm64', goos: 'linux', goarch: 'arm64', fileExtention: ''],
             [pkg: 'jfrog-cli-linux-arm', goos: 'linux', goarch: 'arm', fileExtention: ''],
-            [pkg: 'jfrog-cli-mac-386', goos: 'darwin', goarch: 'amd64', fileExtention: '']
+            [pkg: 'jfrog-cli-mac-386', goos: 'darwin', goarch: 'amd64', fileExtention: ''],
+            [pkg: 'jfrog-cli-linux-s390x', goos: 'linux', goarch: 's390x', fileExtention: '']
     ]
 
     subject = 'jfrog'
@@ -51,6 +52,12 @@ node("docker") {
 
         if ("$EXECUTION_MODE".toString().equals("Publish packages")) {
             buildRpmAndDeb(version, architectures)
+
+            // Download cert files, to be used for signing the Windows executable, packaged by Chocolatey.
+            downloadToolsCert()
+            stage('Build and Publish Chocolatey') {
+                publishChocoPackage(version, jfrogCliRepoDir, architectures)
+            }
 
             stage('Npm Publish') {
                 publishNpmPackage(jfrogCliRepoDir)
@@ -105,8 +112,8 @@ def buildRpmAndDeb(version, architectures) {
 
     if (built) {
         stage("Deploy deb and rpm") {
-            withCredentials([string(credentialsId: 'deb-rpm-deploy-access-token', variable: 'DEB_RPM_DEPLOY_ACCESS_TOKEN')]) {
-                options = "--url https://releases.jfrog.io/artifactory --flat --access-token=$DEB_RPM_DEPLOY_ACCESS_TOKEN"
+            withCredentials([string(credentialsId: 'jfrog-cli-automation', variable: 'JFROG_CLI_AUTOMATION_ACCESS_TOKEN')]) {
+                options = "--url https://releases.jfrog.io/artifactory --flat --access-token=$JFROG_CLI_AUTOMATION_ACCESS_TOKEN"
                 sh """#!/bin/bash
                     builder/jfrog rt u $jfrogCliRepoDir/build/deb_rpm/*.i386.deb jfrog-debs/pool/jfrog-cli/ --deb=xenial,bionic,eoan,focal/contrib/i386 $options
                     builder/jfrog rt u $jfrogCliRepoDir/build/deb_rpm/*.x86_64.deb jfrog-debs/pool/jfrog-cli/ --deb=xenial,bionic,eoan,focal/contrib/amd64 $options
@@ -192,6 +199,21 @@ def publishNpmPackage(jfrogCliRepoDir) {
                 echo "registry=https://registry.npmjs.org" >> .npmrc
                 ./node-v8.11.1-linux-x64/bin/npm publish
             '''
+        }
+    }
+}
+
+def publishChocoPackage(version, jfrogCliRepoDir, architectures) {
+    def architecture = architectures.find { it.goos == 'windows' && it.goarch == 'amd64' }
+    build(architecture.goos, architecture.goarch, architecture.pkg, 'jfrog.exe')
+    dir(jfrogCliRepoDir+'build/chocolatey') {
+        withCredentials([string(credentialsId: 'choco-api-key', variable: 'CHOCO_API_KEY')]) {
+            sh """#!/bin/bash
+                mv $jfrogCliRepoDir/jfrog.exe $jfrogCliRepoDir/build/chocolatey/tools
+                cp $jfrogCliRepoDir/LICENSE $jfrogCliRepoDir/build/chocolatey/tools
+                docker run -v \$PWD:/work -w /work $architecture.chocoImage pack version=$version
+                docker run -v \$PWD:/work -w /work $architecture.chocoImage push --apiKey \$CHOCO_API_KEY jfrog-cli.${version}.nupkg
+            """
         }
     }
 }

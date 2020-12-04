@@ -2,23 +2,22 @@ package main
 
 import (
 	"encoding/xml"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 
-	"github.com/jfrog/jfrog-cli/artifactory/commands/dotnet"
-	dotnetutils "github.com/jfrog/jfrog-cli/artifactory/utils/dotnet"
-	"github.com/jfrog/jfrog-cli/utils/cliutils"
-	"github.com/jfrog/jfrog-cli/utils/config"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
-	"github.com/jfrog/jfrog-cli/artifactory/utils"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/dotnet"
+	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
+	dotnetutils "github.com/jfrog/jfrog-cli-core/artifactory/utils/dotnet"
+	"github.com/jfrog/jfrog-cli-core/utils/config"
 	"github.com/jfrog/jfrog-cli/inttestutils"
 	"github.com/jfrog/jfrog-cli/utils/tests"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func initNugetTest(t *testing.T) {
@@ -60,9 +59,9 @@ func TestNativeNugetResolve(t *testing.T) {
 		{"packagesconfigwithoutmodulechnage", "packagesconfig", []string{dotnetutils.Nuget.String(), "restore"}, []string{"packagesconfig"}, []int{6}},
 		{"packagesconfigwithmodulechnage", "packagesconfig", []string{dotnetutils.Nuget.String(), "restore", "--module=" + ModuleNameJFrogTest}, []string{ModuleNameJFrogTest}, []int{6}},
 		{"packagesconfigwithconfigpath", "packagesconfig", []string{dotnetutils.Nuget.String(), "restore", "./packages.config", "-SolutionDirectory", "."}, []string{"packagesconfig"}, []int{6}},
-		{"multipackagesconfigwithoutmodulechnage", "multipackagesconfig", []string{dotnetutils.Nuget.String(), "restore"}, []string{"proj1", "proj2"}, []int{4, 3}},
-		{"multipackagesconfigwithmodulechnage", "multipackagesconfig", []string{dotnetutils.Nuget.String(), "restore", "--module=" + ModuleNameJFrogTest}, []string{ModuleNameJFrogTest}, []int{6}},
-		{"multipackagesconfigwithslnPath", "multipackagesconfig", []string{dotnetutils.Nuget.String(), "restore", "./multipackagesconfig.sln"}, []string{"proj1", "proj2"}, []int{4, 3}},
+		{"multipackagesconfigwithoutmodulechnage", "multipackagesconfig", []string{dotnetutils.Nuget.String(), "restore"}, []string{"proj1", "proj2", "proj3"}, []int{4, 3, 2}},
+		{"multipackagesconfigwithmodulechnage", "multipackagesconfig", []string{dotnetutils.Nuget.String(), "restore", "--module=" + ModuleNameJFrogTest}, []string{ModuleNameJFrogTest}, []int{8}},
+		{"multipackagesconfigwithslnPath", "multipackagesconfig", []string{dotnetutils.Nuget.String(), "restore", "./multipackagesconfig.sln"}, []string{"proj1", "proj2", "proj3"}, []int{4, 3, 2}},
 		{"multipackagesconfigsingleprojectdir", "multipackagesconfig", []string{dotnetutils.Nuget.String(), "restore", "./proj2/", "-SolutionDirectory", "."}, []string{"proj2"}, []int{3}},
 		{"multipackagesconfigsingleprojectconfig", "multipackagesconfig", []string{dotnetutils.Nuget.String(), "restore", "./proj1/packages.config", "-SolutionDirectory", "."}, []string{"proj1"}, []int{4}},
 	}
@@ -112,7 +111,7 @@ func createNugetProject(t *testing.T, projectName string) string {
 func TestNuGetWithGlobalConfig(t *testing.T) {
 	initNugetTest(t)
 	projectPath := createNugetProject(t, "packagesconfig")
-	jfrogHomeDir, err := cliutils.GetJfrogHomeDir()
+	jfrogHomeDir, err := coreutils.GetJfrogHomeDir()
 	assert.NoError(t, err)
 	err = createConfigFileForTest([]string{jfrogHomeDir}, tests.NugetRemoteRepo, "", t, utils.Nuget, true)
 	assert.NoError(t, err)
@@ -130,11 +129,20 @@ func testNugetCmd(t *testing.T, projectPath, buildName, buildNumber string, expe
 	if native {
 		runNuGet(t, args...)
 	} else {
-		artifactoryCli.Exec(args...)
+		assert.NoError(t, artifactoryCli.Exec(args...))
 	}
-	artifactoryCli.Exec("bp", buildName, buildNumber)
+	assert.NoError(t, artifactoryCli.Exec("bp", buildName, buildNumber))
 
-	buildInfo, _ := inttestutils.GetBuildInfo(artifactoryDetails.Url, buildName, buildNumber, t, artHttpDetails)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, buildName, buildNumber)
+	if err != nil {
+		assert.NoError(t, err)
+		return
+	}
+	if !found {
+		assert.True(t, found, "build info was expected to be found")
+		return
+	}
+	buildInfo := publishedBuildInfo.BuildInfo
 	require.NotEmpty(t, buildInfo.Modules, buildName+" build info was not generated correctly, no modules were created.")
 	for i, module := range buildInfo.Modules {
 		assert.Equal(t, expectedModule[i], buildInfo.Modules[i].Id, "Unexpected module name")

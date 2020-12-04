@@ -3,6 +3,10 @@ package missioncontrol
 import (
 	"fmt"
 	"github.com/codegangsta/cli"
+	corecommon "github.com/jfrog/jfrog-cli-core/docs/common"
+	"github.com/jfrog/jfrog-cli-core/missioncontrol/commands"
+	"github.com/jfrog/jfrog-cli-core/utils/config"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"github.com/jfrog/jfrog-cli/docs/common"
 	configdocs "github.com/jfrog/jfrog-cli/docs/missioncontrol/config"
 	"github.com/jfrog/jfrog-cli/docs/missioncontrol/jpdadd"
@@ -10,9 +14,7 @@ import (
 	"github.com/jfrog/jfrog-cli/docs/missioncontrol/licenseacquire"
 	"github.com/jfrog/jfrog-cli/docs/missioncontrol/licensedeploy"
 	"github.com/jfrog/jfrog-cli/docs/missioncontrol/licenserelease"
-	"github.com/jfrog/jfrog-cli/missioncontrol/commands"
 	"github.com/jfrog/jfrog-cli/utils/cliutils"
-	"github.com/jfrog/jfrog-cli/utils/config"
 	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
@@ -25,11 +27,11 @@ func GetCommands() []cli.Command {
 			Name:         "config",
 			Flags:        cliutils.GetCommandFlags(cliutils.McConfig),
 			Usage:        configdocs.Description,
-			HelpName:     common.CreateUsage("mc config", configdocs.Description, configdocs.Usage),
+			HelpName:     corecommon.CreateUsage("mc config", configdocs.Description, configdocs.Usage),
 			UsageText:    configdocs.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
 			Aliases:      []string{"c"},
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return configure(c)
 			},
@@ -38,11 +40,11 @@ func GetCommands() []cli.Command {
 			Name:         "license-acquire",
 			Flags:        cliutils.GetCommandFlags(cliutils.LicenseAcquire),
 			Usage:        licenseacquire.Description,
-			HelpName:     common.CreateUsage("mc license-acquire", licenseacquire.Description, licenseacquire.Usage),
+			HelpName:     corecommon.CreateUsage("mc license-acquire", licenseacquire.Description, licenseacquire.Usage),
 			UsageText:    licenseacquire.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
 			Aliases:      []string{"la"},
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return licenseAcquire(c)
 			},
@@ -51,11 +53,11 @@ func GetCommands() []cli.Command {
 			Name:         "license-deploy",
 			Flags:        cliutils.GetCommandFlags(cliutils.LicenseDeploy),
 			Usage:        licensedeploy.Description,
-			HelpName:     common.CreateUsage("mc license-deploy", licensedeploy.Description, licensedeploy.Usage),
+			HelpName:     corecommon.CreateUsage("mc license-deploy", licensedeploy.Description, licensedeploy.Usage),
 			UsageText:    licensedeploy.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
 			Aliases:      []string{"ld"},
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return licenseDeploy(c)
 			},
@@ -64,11 +66,11 @@ func GetCommands() []cli.Command {
 			Name:         "license-release",
 			Flags:        cliutils.GetCommandFlags(cliutils.LicenseRelease),
 			Usage:        licenserelease.Description,
-			HelpName:     common.CreateUsage("mc license-release", licenserelease.Description, licenserelease.Usage),
+			HelpName:     corecommon.CreateUsage("mc license-release", licenserelease.Description, licenserelease.Usage),
 			UsageText:    licenserelease.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
 			Aliases:      []string{"lr"},
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return licenseRelease(c)
 			},
@@ -77,11 +79,11 @@ func GetCommands() []cli.Command {
 			Name:         "jpd-add",
 			Flags:        cliutils.GetCommandFlags(cliutils.JpdAdd),
 			Usage:        jpdadd.Description,
-			HelpName:     common.CreateUsage("mc jpd-add", jpdadd.Description, jpdadd.Usage),
+			HelpName:     corecommon.CreateUsage("mc jpd-add", jpdadd.Description, jpdadd.Usage),
 			UsageText:    jpdadd.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
 			Aliases:      []string{"ja"},
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return jpdAdd(c)
 			},
@@ -90,11 +92,11 @@ func GetCommands() []cli.Command {
 			Name:         "jpd-delete",
 			Flags:        cliutils.GetCommandFlags(cliutils.JpdDelete),
 			Usage:        jpddelete.Description,
-			HelpName:     common.CreateUsage("mc jpd-delete", jpddelete.Description, jpddelete.Usage),
+			HelpName:     corecommon.CreateUsage("mc jpd-delete", jpddelete.Description, jpddelete.Usage),
 			UsageText:    jpddelete.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
 			Aliases:      []string{"jd"},
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return jpdDelete(c)
 			},
@@ -179,7 +181,7 @@ func offerConfig(c *cli.Context) (*config.MissionControlDetails, error) {
 		"Configuring JFrog CLI with these parameters now will save you having to include them as command options.\n"+
 		"You can also configure these parameters later using the 'jfrog mc c' command.\n"+
 		"Configure now?", cliutils.OfferConfig)
-	confirmed := cliutils.AskYesNo(msg, false)
+	confirmed := coreutils.AskYesNo(msg, false)
 	if !confirmed {
 		_ = config.SaveMissionControlConf(new(config.MissionControlDetails))
 		return nil, nil

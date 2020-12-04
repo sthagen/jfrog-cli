@@ -3,7 +3,7 @@ package tests
 import (
 	"path/filepath"
 
-	"github.com/jfrog/jfrog-cli/artifactory/utils"
+	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
 	clientutils "github.com/jfrog/jfrog-client-go/artifactory/services/utils"
 )
 
@@ -134,17 +134,18 @@ var (
 	RtRepo1And2            = "cli-tests-rt*"
 	RtRepo1And2Placeholder = "cli-tests-rt(*)"
 
-	BundleName      = "cli-tests-dist-bundle"
-	DockerBuildName = "cli-tests-docker-build"
-	DockerImageName = "cli-tests-docker-image"
-	DotnetBuildName = "cli-tests-dotnet-build"
-	GoBuildName     = "cli-tests-go-build"
-	GradleBuildName = "cli-tests-gradle-build"
-	NpmBuildName    = "cli-tests-npm-build"
-	NuGetBuildName  = "cli-tests-nuget-build"
-	PipBuildName    = "cli-tests-pip-build"
-	RtBuildName1    = "cli-tests-rt-build1"
-	RtBuildName2    = "cli-tests-rt-build2"
+	BundleName                  = "cli-tests-dist-bundle"
+	DockerBuildName             = "cli-tests-docker-build"
+	DockerImageName             = "cli-tests-docker-image"
+	DotnetBuildName             = "cli-tests-dotnet-build"
+	GoBuildName                 = "cli-tests-go-build"
+	GradleBuildName             = "cli-tests-gradle-build"
+	NpmBuildName                = "cli-tests-npm-build"
+	NuGetBuildName              = "cli-tests-nuget-build"
+	PipBuildName                = "cli-tests-pip-build"
+	RtBuildName1                = "cli-tests-rt-build1"
+	RtBuildName2                = "cli-tests-rt-build2"
+	RtBuildNameWithSpecialChars = "cli-tests-rt-a$+~&^a#-build3"
 )
 
 func GetTxtUploadExpectedRepo1() []string {
@@ -213,6 +214,14 @@ func GetUploadDebianExpected() []string {
 		RtDebianRepo + "/data/a1.in",
 		RtDebianRepo + "/data/a2.in",
 		RtDebianRepo + "/data/a3.in",
+	}
+}
+
+func GetPrefixFilesCopy() []string {
+	return []string{
+		RtRepo2 + "/prefix-a",
+		RtRepo2 + "/prefix-ab",
+		RtRepo2 + "/prefix-abb",
 	}
 }
 
@@ -887,6 +896,37 @@ func GetSearchAfterDeleteWithExcludeProps() []utils.SearchResult {
 			Props: map[string][]string{
 				"c": {"1"},
 			},
+		},
+	}
+}
+
+func GetThirdSearchResultSortedByAsc() utils.SearchResult {
+	return utils.SearchResult{
+		Path: RtRepo1 + "/org",
+		Type: "file",
+		Sha1: "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+		Md5:  "d41d8cd98f00b204e9800998ecf8427e",
+	}
+
+}
+
+func GetSecondSearchResultSortedByAsc() utils.SearchResult {
+	return utils.SearchResult{
+		Path: RtRepo1 + "/o",
+		Type: "file",
+		Sha1: "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+		Md5:  "d41d8cd98f00b204e9800998ecf8427e",
+	}
+}
+
+func GetFirstSearchResultSortedByAsc() utils.SearchResult {
+	return utils.SearchResult{
+		Path: RtRepo1 + "/or",
+		Type: "file",
+		Sha1: "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+		Md5:  "d41d8cd98f00b204e9800998ecf8427e",
+		Props: map[string][]string{
+			"k1": {"v1"},
 		},
 	}
 }

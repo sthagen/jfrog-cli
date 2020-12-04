@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
 	"os"
 	"os/exec"
@@ -12,10 +10,12 @@ import (
 	"testing"
 
 	gofrogcmd "github.com/jfrog/gofrog/io"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"github.com/jfrog/jfrog-cli/inttestutils"
-	"github.com/jfrog/jfrog-cli/utils/cliutils"
 	"github.com/jfrog/jfrog-cli/utils/tests"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type PipCmd struct {
@@ -26,9 +26,6 @@ type PipCmd struct {
 func TestPipInstall(t *testing.T) {
 	// Init pip.
 	initPipTest(t)
-
-	// Init CLI without credential flags.
-	artifactoryCli = tests.NewJfrogCli(execMain, "jfrog rt", "")
 
 	// Add virtual-environment path to 'PATH' for executing all pip and python commands inside the virtual-environment.
 	pathValue := setPathEnvForPipInstall(t)
@@ -42,7 +39,7 @@ func TestPipInstall(t *testing.T) {
 
 	// Populate cli config with 'default' server.
 	oldHomeDir, newHomeDir := prepareHomeDir(t)
-	defer os.Setenv(cliutils.HomeDir, oldHomeDir)
+	defer os.Setenv(coreutils.HomeDir, oldHomeDir)
 	defer os.RemoveAll(newHomeDir)
 
 	// Create test cases.
@@ -87,16 +84,25 @@ func testPipCmd(t *testing.T, outputFolder, projectPath, buildNumber, module str
 
 	args = append(args, "--build-number="+buildNumber)
 
-	err = artifactoryCli.Exec(args...)
+	err = artifactoryCli.WithoutCredentials().Exec(args...)
 	if err != nil {
 		assert.Fail(t, "Failed executing pip-install command", err.Error())
 		cleanPipTest(t, outputFolder)
 		return
 	}
 
-	artifactoryCli.Exec("bp", tests.PipBuildName, buildNumber)
+	assert.NoError(t, artifactoryCli.Exec("bp", tests.PipBuildName, buildNumber))
 
-	buildInfo, _ := inttestutils.GetBuildInfo(artifactoryDetails.Url, tests.PipBuildName, buildNumber, t, artHttpDetails)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.PipBuildName, buildNumber)
+	if err != nil {
+		assert.NoError(t, err)
+		return
+	}
+	if !found {
+		assert.True(t, found, "build info was expected to be found")
+		return
+	}
+	buildInfo := publishedBuildInfo.BuildInfo
 	require.NotEmpty(t, buildInfo.Modules, "Pip build info was not generated correctly, no modules were created.")
 	assert.Len(t, buildInfo.Modules[0].Dependencies, expectedDependencies, "Incorrect number of artifacts found in the build-info")
 	assert.Equal(t, module, buildInfo.Modules[0].Id, "Unexpected module name")
@@ -169,7 +175,7 @@ func setPathEnvForPipInstall(t *testing.T) string {
 	virtualEnvPath := *tests.PipVirtualEnv
 	if virtualEnvPath != "" {
 		var newPathValue string
-		if cliutils.IsWindows() {
+		if coreutils.IsWindows() {
 			newPathValue = fmt.Sprintf("%s;%s", virtualEnvPath, pathValue)
 		} else {
 			newPathValue = fmt.Sprintf("%s:%s", virtualEnvPath, pathValue)

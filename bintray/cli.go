@@ -2,12 +2,16 @@ package bintray
 
 import (
 	"errors"
+	corecommon "github.com/jfrog/jfrog-cli-core/docs/common"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
+	"github.com/jfrog/jfrog-cli-core/utils/ioutils"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/codegangsta/cli"
-	"github.com/jfrog/jfrog-cli/bintray/commands"
+	"github.com/jfrog/jfrog-cli-core/bintray/commands"
+	"github.com/jfrog/jfrog-cli-core/utils/config"
 	accesskeysdoc "github.com/jfrog/jfrog-cli/docs/bintray/accesskeys"
 	configdocs "github.com/jfrog/jfrog-cli/docs/bintray/config"
 	"github.com/jfrog/jfrog-cli/docs/bintray/downloadfile"
@@ -31,8 +35,6 @@ import (
 	"github.com/jfrog/jfrog-cli/docs/bintray/versionupdate"
 	"github.com/jfrog/jfrog-cli/docs/common"
 	"github.com/jfrog/jfrog-cli/utils/cliutils"
-	"github.com/jfrog/jfrog-cli/utils/config"
-	"github.com/jfrog/jfrog-cli/utils/ioutils"
 	"github.com/jfrog/jfrog-client-go/bintray"
 	"github.com/jfrog/jfrog-client-go/bintray/auth"
 	"github.com/jfrog/jfrog-client-go/bintray/services"
@@ -53,9 +55,9 @@ func GetCommands() []cli.Command {
 			Flags:        getConfigFlags(),
 			Aliases:      []string{"c"},
 			Usage:        configdocs.Description,
-			HelpName:     common.CreateUsage("bt config", configdocs.Description, configdocs.Usage),
+			HelpName:     corecommon.CreateUsage("bt config", configdocs.Description, configdocs.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return configure(c)
 			},
@@ -65,10 +67,10 @@ func GetCommands() []cli.Command {
 			Flags:        getUploadFlags(),
 			Aliases:      []string{"u"},
 			Usage:        uploaddocs.Description,
-			HelpName:     common.CreateUsage("bt upload", uploaddocs.Description, uploaddocs.Usage),
+			HelpName:     corecommon.CreateUsage("bt upload", uploaddocs.Description, uploaddocs.Usage),
 			UsageText:    uploaddocs.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return upload(c)
 			},
@@ -78,10 +80,10 @@ func GetCommands() []cli.Command {
 			Flags:        getDownloadFileFlags(),
 			Aliases:      []string{"dlf"},
 			Usage:        downloadfile.Description,
-			HelpName:     common.CreateUsage("bt download-file", downloadfile.Description, downloadfile.Usage),
+			HelpName:     corecommon.CreateUsage("bt download-file", downloadfile.Description, downloadfile.Usage),
 			UsageText:    downloadfile.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return downloadFile(c)
 			},
@@ -91,10 +93,10 @@ func GetCommands() []cli.Command {
 			Flags:        getDownloadVersionFlags(),
 			Aliases:      []string{"dlv"},
 			Usage:        downloadver.Description,
-			HelpName:     common.CreateUsage("bt download-ver", downloadver.Description, downloadver.Usage),
+			HelpName:     corecommon.CreateUsage("bt download-ver", downloadver.Description, downloadver.Usage),
 			UsageText:    downloadver.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return downloadVersion(c)
 			},
@@ -104,10 +106,10 @@ func GetCommands() []cli.Command {
 			Flags:        getFlags(),
 			Aliases:      []string{"ps"},
 			Usage:        packageshow.Description,
-			HelpName:     common.CreateUsage("bt package-show", packageshow.Description, packageshow.Usage),
+			HelpName:     corecommon.CreateUsage("bt package-show", packageshow.Description, packageshow.Usage),
 			UsageText:    packageshow.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return showPackage(c)
 			},
@@ -117,10 +119,10 @@ func GetCommands() []cli.Command {
 			Flags:        getCreateAndUpdatePackageFlags(),
 			Aliases:      []string{"pc"},
 			Usage:        packagecreate.Description,
-			HelpName:     common.CreateUsage("bt package-create", packagecreate.Description, packagecreate.Usage),
+			HelpName:     corecommon.CreateUsage("bt package-create", packagecreate.Description, packagecreate.Usage),
 			UsageText:    packagecreate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return createPackage(c)
 			},
@@ -130,10 +132,10 @@ func GetCommands() []cli.Command {
 			Flags:        getCreateAndUpdatePackageFlags(),
 			Aliases:      []string{"pu"},
 			Usage:        packageupdate.Description,
-			HelpName:     common.CreateUsage("bt package-update", packageupdate.Description, packageupdate.Usage),
+			HelpName:     corecommon.CreateUsage("bt package-update", packageupdate.Description, packageupdate.Usage),
 			UsageText:    packageupdate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return updatePackage(c)
 			},
@@ -143,10 +145,10 @@ func GetCommands() []cli.Command {
 			Flags:        getDeletePackageAndVersionFlags(),
 			Aliases:      []string{"pd"},
 			Usage:        packagedelete.Description,
-			HelpName:     common.CreateUsage("bt package-delete", packagedelete.Description, packagedelete.Usage),
+			HelpName:     corecommon.CreateUsage("bt package-delete", packagedelete.Description, packagedelete.Usage),
 			UsageText:    packagedelete.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return deletePackage(c)
 			},
@@ -156,10 +158,10 @@ func GetCommands() []cli.Command {
 			Flags:        getFlags(),
 			Aliases:      []string{"vs"},
 			Usage:        versionshow.Description,
-			HelpName:     common.CreateUsage("bt version-show", versionshow.Description, versionshow.Usage),
+			HelpName:     corecommon.CreateUsage("bt version-show", versionshow.Description, versionshow.Usage),
 			UsageText:    versionshow.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return showVersion(c)
 			},
@@ -169,10 +171,10 @@ func GetCommands() []cli.Command {
 			Flags:        getCreateAndUpdateVersionFlags(),
 			Aliases:      []string{"vc"},
 			Usage:        versioncreate.Description,
-			HelpName:     common.CreateUsage("bt version-create", versioncreate.Description, versioncreate.Usage),
+			HelpName:     corecommon.CreateUsage("bt version-create", versioncreate.Description, versioncreate.Usage),
 			UsageText:    versioncreate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return createVersion(c)
 			},
@@ -182,10 +184,10 @@ func GetCommands() []cli.Command {
 			Flags:        getCreateAndUpdateVersionFlags(),
 			Aliases:      []string{"vu"},
 			Usage:        versionupdate.Description,
-			HelpName:     common.CreateUsage("bt version-update", versionupdate.Description, versionupdate.Usage),
+			HelpName:     corecommon.CreateUsage("bt version-update", versionupdate.Description, versionupdate.Usage),
 			UsageText:    versionupdate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return updateVersion(c)
 			},
@@ -195,10 +197,10 @@ func GetCommands() []cli.Command {
 			Flags:        getDeletePackageAndVersionFlags(),
 			Aliases:      []string{"vd"},
 			Usage:        versiondelete.Description,
-			HelpName:     common.CreateUsage("bt version-delete", versiondelete.Description, versiondelete.Usage),
+			HelpName:     corecommon.CreateUsage("bt version-delete", versiondelete.Description, versiondelete.Usage),
 			UsageText:    versiondelete.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return deleteVersion(c)
 			},
@@ -208,10 +210,10 @@ func GetCommands() []cli.Command {
 			Flags:        getFlags(),
 			Aliases:      []string{"vp"},
 			Usage:        versionpublish.Description,
-			HelpName:     common.CreateUsage("bt version-publish", versionpublish.Description, versionpublish.Usage),
+			HelpName:     corecommon.CreateUsage("bt version-publish", versionpublish.Description, versionpublish.Usage),
 			UsageText:    versionpublish.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return publishVersion(c)
 			},
@@ -221,10 +223,10 @@ func GetCommands() []cli.Command {
 			Flags:        getEntitlementsFlags(),
 			Aliases:      []string{"ent"},
 			Usage:        entitlementsdocs.Description,
-			HelpName:     common.CreateUsage("bt entitlements", entitlementsdocs.Description, entitlementsdocs.Usage),
+			HelpName:     corecommon.CreateUsage("bt entitlements", entitlementsdocs.Description, entitlementsdocs.Usage),
 			UsageText:    entitlementsdocs.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return handleEntitlements(c)
 			},
@@ -234,10 +236,10 @@ func GetCommands() []cli.Command {
 			Flags:        getAccessKeysFlags(),
 			Aliases:      []string{"acc-keys"},
 			Usage:        accesskeysdoc.Description,
-			HelpName:     common.CreateUsage("bt access-keys", accesskeysdoc.Description, accesskeysdoc.Usage),
+			HelpName:     corecommon.CreateUsage("bt access-keys", accesskeysdoc.Description, accesskeysdoc.Usage),
 			UsageText:    accesskeysdoc.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return accessKeys(c)
 			},
@@ -247,10 +249,10 @@ func GetCommands() []cli.Command {
 			Flags:        getUrlSigningFlags(),
 			Aliases:      []string{"us"},
 			Usage:        urlsign.Description,
-			HelpName:     common.CreateUsage("bt url-sign", urlsign.Description, urlsign.Usage),
+			HelpName:     corecommon.CreateUsage("bt url-sign", urlsign.Description, urlsign.Usage),
 			UsageText:    urlsign.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return signUrl(c)
 			},
@@ -260,10 +262,10 @@ func GetCommands() []cli.Command {
 			Flags:        getGpgSigningFlags(),
 			Aliases:      []string{"gsf"},
 			Usage:        gpgsignfile.Description,
-			HelpName:     common.CreateUsage("bt gpg-sign-file", gpgsignfile.Description, gpgsignfile.Usage),
+			HelpName:     corecommon.CreateUsage("bt gpg-sign-file", gpgsignfile.Description, gpgsignfile.Usage),
 			UsageText:    gpgsignfile.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return gpgSignFile(c)
 			},
@@ -273,10 +275,10 @@ func GetCommands() []cli.Command {
 			Flags:        getGpgSigningFlags(),
 			Aliases:      []string{"gsv"},
 			Usage:        gpgsignver.Description,
-			HelpName:     common.CreateUsage("bt gpg-sign-ver", gpgsignver.Description, gpgsignver.Usage),
+			HelpName:     corecommon.CreateUsage("bt gpg-sign-ver", gpgsignver.Description, gpgsignver.Usage),
 			UsageText:    gpgsignver.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return gpgSignVersion(c)
 			},
@@ -286,10 +288,10 @@ func GetCommands() []cli.Command {
 			Flags:        getFlags(),
 			Aliases:      []string{"l"},
 			Usage:        logsdocs.Description,
-			HelpName:     common.CreateUsage("bt logs", logsdocs.Description, logsdocs.Usage),
+			HelpName:     corecommon.CreateUsage("bt logs", logsdocs.Description, logsdocs.Usage),
 			UsageText:    logsdocs.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return logs(c)
 			},
@@ -299,10 +301,10 @@ func GetCommands() []cli.Command {
 			Flags:        getStreamFlags(),
 			Aliases:      []string{"st"},
 			Usage:        streamdocs.Description,
-			HelpName:     common.CreateUsage("bt stream", streamdocs.Description, streamdocs.Usage),
+			HelpName:     corecommon.CreateUsage("bt stream", streamdocs.Description, streamdocs.Usage),
 			UsageText:    streamdocs.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return stream(c)
 			},
@@ -312,10 +314,10 @@ func GetCommands() []cli.Command {
 			Flags:        getMavenCentralSyncFlags(),
 			Aliases:      []string{"mcs"},
 			Usage:        msdocs.Description,
-			HelpName:     common.CreateUsage("bt maven-central-sync", msdocs.Description, msdocs.Usage),
+			HelpName:     corecommon.CreateUsage("bt maven-central-sync", msdocs.Description, msdocs.Usage),
 			UsageText:    msdocs.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return mavenCentralSync(c)
 			},
@@ -806,7 +808,7 @@ func deletePackage(c *cli.Context) error {
 		return err
 	}
 	if !cliutils.GetQuietValue(c) {
-		confirmed := cliutils.AskYesNo("Delete package "+packagePath.Package+"?", false)
+		confirmed := coreutils.AskYesNo("Delete package "+packagePath.Package+"?", false)
 		if !confirmed {
 			return nil
 		}
@@ -828,7 +830,7 @@ func deleteVersion(c *cli.Context) error {
 		return err
 	}
 	if !cliutils.GetQuietValue(c) {
-		confirmed := cliutils.AskYesNo("Delete version "+versionPath.Version+
+		confirmed := coreutils.AskYesNo("Delete version "+versionPath.Version+
 			" of package "+versionPath.Package+"?", false)
 		if !confirmed {
 			return nil
@@ -891,7 +893,7 @@ func upload(c *cli.Context) error {
 	}
 	params := services.NewUploadParams()
 	params.Pattern = c.Args().Get(0)
-	if cliutils.IsWindows() {
+	if coreutils.IsWindows() {
 		params.Pattern = ioutils.UnixToWinPathSeparator(params.Pattern)
 	}
 
@@ -1046,7 +1048,10 @@ func stream(c *cli.Context) error {
 		Subject:        c.Args().Get(0),
 		Include:        c.String("include"),
 	}
-	commands.Stream(streamDetails, os.Stdout)
+	err = commands.Stream(streamDetails, os.Stdout)
+	if err != nil {
+		coreutils.ExitOnErr(err)
+	}
 
 	return nil
 }
@@ -1365,7 +1370,7 @@ func offerConfig(c *cli.Context) (*config.BintrayDetails, error) {
 		"Configuring JFrog CLI with these parameters now will save you having to include them as command options.\n" +
 		"You can also configure these parameters later using the 'jfrog bt c' command.\n" +
 		"Configure now?"
-	confirmed := cliutils.AskYesNo(msg, false)
+	confirmed := coreutils.AskYesNo(msg, false)
 	if !confirmed {
 		config.SaveBintrayConf(new(config.BintrayDetails))
 		return nil, nil

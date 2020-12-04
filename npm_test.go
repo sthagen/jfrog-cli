@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -10,15 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jfrog/jfrog-cli/utils/cliutils"
-	"github.com/stretchr/testify/assert"
-
-	"github.com/jfrog/jfrog-cli/artifactory/spec"
-	"github.com/jfrog/jfrog-cli/artifactory/utils"
+	"github.com/jfrog/jfrog-cli-core/artifactory/spec"
+	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
+	"github.com/jfrog/jfrog-cli-core/utils/ioutils"
 	"github.com/jfrog/jfrog-cli/inttestutils"
-	"github.com/jfrog/jfrog-cli/utils/ioutils"
 	"github.com/jfrog/jfrog-cli/utils/tests"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
+	"github.com/stretchr/testify/assert"
 )
 
 type npmTestParams struct {
@@ -34,7 +33,7 @@ type npmTestParams struct {
 const npmFlagName = "npm"
 
 func cleanNpmTest() {
-	os.Unsetenv(cliutils.HomeDir)
+	os.Unsetenv(coreutils.HomeDir)
 	deleteSpec := spec.NewBuilder().Pattern(tests.NpmRepo).BuildSpec()
 	tests.DeleteFiles(deleteSpec, artifactoryDetails)
 	tests.CleanFileSystem()
@@ -190,7 +189,7 @@ func initGlobalNpmFilesTest(t *testing.T) (npmProjectPath string) {
 	assert.NoError(t, err)
 
 	prepareArtifactoryForNpmBuild(t, filepath.Dir(npmProjectPath))
-	jfrogHomeDir, err := cliutils.GetJfrogHomeDir()
+	jfrogHomeDir, err := coreutils.GetJfrogHomeDir()
 	assert.NoError(t, err)
 	err = createConfigFileForTest([]string{jfrogHomeDir}, tests.NpmRemoteRepo, tests.NpmRepo, t, utils.Npm, true)
 	assert.NoError(t, err)
@@ -227,11 +226,20 @@ func validateNpmInstall(t *testing.T, npmTestParams npmTestParams) {
 	if !strings.Contains(npmTestParams.npmArgs, "-only=prod") && !strings.Contains(npmTestParams.npmArgs, "-production") {
 		expectedDependencies = append(expectedDependencies, expectedDependency{id: "json-9.0.6.tgz", scopes: []string{"development"}})
 	}
-	buildInfo, _ := inttestutils.GetBuildInfo(artifactoryDetails.Url, tests.NpmBuildName, npmTestParams.buildNumber, t, artHttpDetails)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.NpmBuildName, npmTestParams.buildNumber)
+	if err != nil {
+		assert.NoError(t, err)
+		return
+	}
+	if !found {
+		assert.True(t, found, "build info was expected to be found")
+		return
+	}
+	buildInfo := publishedBuildInfo.BuildInfo
 	if buildInfo.Modules == nil || len(buildInfo.Modules) == 0 {
 		// Case no module was created
-		assert.Fail(t, "npm install test with the arguments: \n%v \nexpected to have module with the following dependencies: \n%v \nbut has no modules: \n%v",
-			npmTestParams, expectedDependencies, buildInfo)
+		t.Error(fmt.Sprintf("npm install test with command '%s' and repo '%s' failed", npmTestParams.command, npmTestParams.repo))
+		return
 	}
 	// The checksums are ignored when comparing the actual and the expected
 	assert.Equal(t, len(expectedDependencies), len(buildInfo.Modules[0].Dependencies), "npm install test with the arguments: \n%v \nexpected to have the following dependencies: \n%v \nbut has: \n%v",
@@ -253,7 +261,16 @@ func validateNpmInstall(t *testing.T, npmTestParams npmTestParams) {
 }
 
 func validateNpmPackInstall(t *testing.T, npmTestParams npmTestParams) {
-	buildInfo, _ := inttestutils.GetBuildInfo(artifactoryDetails.Url, tests.NpmBuildName, npmTestParams.buildNumber, t, artHttpDetails)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.NpmBuildName, npmTestParams.buildNumber)
+	if err != nil {
+		assert.NoError(t, err)
+		return
+	}
+	if !found {
+		assert.True(t, found, "build info was expected to be found")
+		return
+	}
+	buildInfo := publishedBuildInfo.BuildInfo
 	assert.Zero(t, buildInfo.Modules, "npm install test with the arguments: \n%v \nexpected to have no modules")
 
 	packageJsonFile, err := ioutil.ReadFile(npmTestParams.wd)
@@ -283,7 +300,16 @@ func validateNpmScopedPublish(t *testing.T, npmTestParams npmTestParams) {
 }
 
 func validateNpmCommonPublish(t *testing.T, npmTestParams npmTestParams) {
-	buildInfo, _ := inttestutils.GetBuildInfo(artifactoryDetails.Url, tests.NpmBuildName, npmTestParams.buildNumber, t, artHttpDetails)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.NpmBuildName, npmTestParams.buildNumber)
+	if err != nil {
+		assert.NoError(t, err)
+		return
+	}
+	if !found {
+		assert.True(t, found, "build info was expected to be found")
+		return
+	}
+	buildInfo := publishedBuildInfo.BuildInfo
 	expectedArtifactName := "jfrog-cli-tests-1.0.0.tgz"
 	if buildInfo.Modules == nil || len(buildInfo.Modules) == 0 {
 		// Case no module was created

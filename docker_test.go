@@ -6,15 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	gofrogcmd "github.com/jfrog/gofrog/io"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/generic"
-	"github.com/jfrog/jfrog-cli/artifactory/spec"
-	"github.com/jfrog/jfrog-cli/artifactory/utils/docker"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/generic"
+	"github.com/jfrog/jfrog-cli-core/artifactory/spec"
+	"github.com/jfrog/jfrog-cli-core/artifactory/utils/docker"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"github.com/jfrog/jfrog-cli/inttestutils"
-	"github.com/jfrog/jfrog-cli/utils/cliutils"
 	"github.com/jfrog/jfrog-cli/utils/tests"
+	"github.com/stretchr/testify/assert"
 )
 
 func InitDockerTests() {
@@ -69,10 +68,10 @@ func TestDockerPushBuildNameNumberFromEnv(t *testing.T) {
 	initDockerTest(t)
 	imageTag := inttestutils.BuildTestDockerImage(tests.DockerImageName)
 	buildNumber := "1"
-	os.Setenv(cliutils.BuildName, tests.DockerBuildName)
-	os.Setenv(cliutils.BuildNumber, buildNumber)
-	defer os.Unsetenv(cliutils.BuildName)
-	defer os.Unsetenv(cliutils.BuildNumber)
+	os.Setenv(coreutils.BuildName, tests.DockerBuildName)
+	os.Setenv(coreutils.BuildNumber, buildNumber)
+	defer os.Unsetenv(coreutils.BuildName)
+	defer os.Unsetenv(coreutils.BuildNumber)
 
 	// Push docker image using docker client
 	artifactoryCli.Exec("docker-push", imageTag, *tests.DockerTargetRepo)
@@ -133,21 +132,31 @@ func TestDockerClientApiVersionCmd(t *testing.T) {
 
 func TestDockerFatManifestPull(t *testing.T) {
 	initDockerTest(t)
+	for _, dockerRepo := range [...]string{*tests.DockerRemoteRepo, *tests.DockerVirtualRepo} {
+		imageName := "traefik"
+		imageTag := path.Join(*tests.DockerRepoDomain, imageName+":2.2")
+		buildNumber := "1"
 
-	imageName := "traefik"
-	imageTag := path.Join(*tests.DockerRepoDomain, imageName+":2.2")
-	buildNumber := "1"
+		// Pull docker image using docker client
+		assert.NoError(t, artifactoryCli.Exec("docker-pull", imageTag, dockerRepo, "--build-name="+tests.DockerBuildName, "--build-number="+buildNumber))
+		assert.NoError(t, artifactoryCli.Exec("build-publish", tests.DockerBuildName, buildNumber))
 
-	// Pull docker image using docker client
-	artifactoryCli.Exec("docker-pull", imageTag, *tests.DockerVirtualRepo, "--build-name="+tests.DockerBuildName, "--build-number="+buildNumber)
-	artifactoryCli.Exec("build-publish", tests.DockerBuildName, buildNumber)
+		// Validate
+		publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.DockerBuildName, buildNumber)
+		if err != nil {
+			assert.NoError(t, err)
+			return
+		}
+		if !found {
+			assert.True(t, found, "build info was expected to be found")
+			return
+		}
+		buildInfo := publishedBuildInfo.BuildInfo
+		validateBuildInfo(buildInfo, t, 6, 0, imageName+":2.2")
 
-	// Validate
-	buildInfo, _ := inttestutils.GetBuildInfo(artifactoryDetails.Url, tests.DockerBuildName, buildNumber, t, artHttpDetails)
-	validateBuildInfo(buildInfo, t, 6, 0, imageName+":2.2")
-
-	inttestutils.DockerTestCleanup(artifactoryDetails, artHttpDetails, imageName, tests.DockerBuildName)
-	inttestutils.DeleteTestDockerImage(imageTag)
+		inttestutils.DockerTestCleanup(artifactoryDetails, artHttpDetails, imageName, tests.DockerBuildName)
+		inttestutils.DeleteTestDockerImage(imageTag)
+	}
 }
 
 func TestDockerPromote(t *testing.T) {
@@ -177,7 +186,16 @@ func TestDockerPromote(t *testing.T) {
 
 func validateDockerBuild(buildName, buildNumber, imagePath, module string, expectedArtifacts, expectedDependencies, expectedItemsInArtifactory int, t *testing.T) {
 	validateDockerImage(t, imagePath, expectedItemsInArtifactory)
-	buildInfo, _ := inttestutils.GetBuildInfo(artifactoryDetails.Url, buildName, buildNumber, t, artHttpDetails)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, buildName, buildNumber)
+	if err != nil {
+		assert.NoError(t, err)
+		return
+	}
+	if !found {
+		assert.True(t, found, "build info was expected to be found")
+		return
+	}
+	buildInfo := publishedBuildInfo.BuildInfo
 	validateBuildInfo(buildInfo, t, expectedDependencies, expectedArtifacts, module)
 }
 

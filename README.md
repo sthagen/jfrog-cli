@@ -10,6 +10,7 @@
 - [Tests](#tests)
 - [Code Contributions](#code-contributions)
 - [Using JFrog CLI](#using-jfrog-cli)
+- [JFrog CLI Plugins](#jfrog-cli-plugins)
 - [Release Notes](#release-notes)
 
 # Overview
@@ -24,19 +25,7 @@ Several features of the JFrog CLI makes your scripts more efficient and reliable
 
 # Download and Installation
 
-You can download the executable directly using the [JFrog CLI Download Page](https://www.jfrog.com/getcli/), or install it with npm, homebrew or docker.
-## NPM
-````
-npm install jfrog-cli-go
-````
-## Homebrew
-````
-brew install jfrog-cli-go
-````
-## Docker
-````
-docker run docker.bintray.io/jfrog/jfrog-cli-go:latest jfrog <COMMAND>
-````
+You can either install JFrog CLI using one of the supported installers or download its executable directly. Visit the [Install JFrog CLI Page](https://jfrog.com/getcli/) for details.
 
 # Building the Executable
 
@@ -100,8 +89,9 @@ The types are:
 | `-test.go` | Go tests |
 | `-test.pip` | Pip tests |
 | `-test.nuget` | Nuget tests |
+| `-test.plugins` | Plugins tests |
 
-* Running the tests will create builds and repositories with timestamps, 
+* Running the tests will create builds and repositories with timestamps,
 for example: `cli-tests-rt1-1592990748` and `cli-tests-rt2-1592990748`.<br/>
 Once the tests are completed, the content of these repositories will be deleted.
 
@@ -168,7 +158,8 @@ In addition to [general optional flags](#Usage) you *must* use the following doc
 | --- | --- |
 | `-rt.dockerRepoDomain` | Artifactory Docker registry domain. |
 | `-rt.dockerVirtualRepo` | Artifactory Docker virtual repository name. |
-| `-rt.dockerTargetRepo` | Artifactory Docker repository name. |
+| `-rt.dockerRemoteRepo` | Artifactory Docker remote repository name. |
+| `-rt.dockerTargetRepo` | Artifactory Docker local repository name. |
 
 ##### Examples
 To run docker tests execute the following command (fill out the missing parameters as described below).
@@ -209,6 +200,12 @@ In addition to [general optional flags](#Usage) you can use the following option
 ##### Examples
 ````
 go test -v github.com/jfrog/jfrog-cli -test.pip [flags]
+````
+
+#### Plugins tests
+* To run Plugins tests execute the following command:
+````
+go test -v github.com/jfrog/jfrog-cli -test.plugins
 ````
 
 ### Bintray tests
@@ -254,6 +251,9 @@ JFrog CLI can be used for a variety of functions with Artifactory, Bintray, Xray
 and has a dedicated set of commands for each product.
 To learn how to use JFrog CLI, please visit the [JFrog CLI User Guide](https://www.jfrog.com/confluence/display/CLI/Welcome+to+JFrog+CLI).
 
+# JFrog CLI Plugins
+JFrog CLI plugins support enhancing the functionality of JFrog CLI to meet the specific user and organization needs. The source code of a plugin is maintained as an open source Go project on GitHub. All public plugins are registered in JFrog CLI's Plugins Registry, which is hosted in the [jfrog-cli-plugins-reg](https://github.com/jfrog/jfrog-cli-plugins-reg) GitHub repository. We encourage you, as developers, to create plugins and share them publically with the rest of the community. Read more about this in the [JFrog CLI Plugin Developer Guide](guides/jfrog-cli-plugins-developer-guide.md).
+
 ## Using JFrog CLI Docker Image
 The docker image of JFrog CLI can be pulled from Bintray by running the following command:
 ````
@@ -265,4 +265,4 @@ docker run docker.bintray.io/jfrog/jfrog-cli-go:latest jfrog <COMMAND>
 ````
 
 # Release Notes
-The release are available on [Bintray](https://bintray.com/jfrog/jfrog-cli-go/jfrog-cli-linux-amd64#release).
+The release notes are available on [Bintray](https://bintray.com/jfrog/jfrog-cli-go/jfrog-cli-linux-amd64#release).

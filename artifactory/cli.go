@@ -3,8 +3,10 @@ package artifactory
 import (
 	"errors"
 	"fmt"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/dotnet"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/permissiontarget"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/dotnet"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/permissiontarget"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
+	"github.com/jfrog/jfrog-cli-core/utils/ioutils"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/accesstokencreate"
 	dotnetdocs "github.com/jfrog/jfrog-cli/docs/artifactory/dotnet"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/dotnetconfig"
@@ -12,6 +14,9 @@ import (
 	"github.com/jfrog/jfrog-cli/docs/artifactory/permissiontargetdelete"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/permissiontargettemplate"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/permissiontargetupdate"
+	logUtils "github.com/jfrog/jfrog-cli/utils/log"
+	"github.com/jfrog/jfrog-cli/utils/progressbar"
+	ioUtils "github.com/jfrog/jfrog-client-go/utils/io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -19,23 +24,25 @@ import (
 	"strings"
 
 	"github.com/codegangsta/cli"
-	"github.com/jfrog/jfrog-cli/artifactory/commands"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/buildinfo"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/curl"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/distribution"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/docker"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/generic"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/golang"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/gradle"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/mvn"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/npm"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/pip"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/replication"
-	"github.com/jfrog/jfrog-cli/artifactory/commands/repository"
-	commandUtils "github.com/jfrog/jfrog-cli/artifactory/commands/utils"
-	"github.com/jfrog/jfrog-cli/artifactory/spec"
-	"github.com/jfrog/jfrog-cli/artifactory/utils"
-	npmUtils "github.com/jfrog/jfrog-cli/artifactory/utils/npm"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/buildinfo"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/curl"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/distribution"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/docker"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/generic"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/golang"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/gradle"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/mvn"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/npm"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/pip"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/replication"
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/repository"
+	commandUtils "github.com/jfrog/jfrog-cli-core/artifactory/commands/utils"
+	"github.com/jfrog/jfrog-cli-core/artifactory/spec"
+	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
+	npmUtils "github.com/jfrog/jfrog-cli-core/artifactory/utils/npm"
+	corecommon "github.com/jfrog/jfrog-cli-core/docs/common"
+	"github.com/jfrog/jfrog-cli-core/utils/config"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/buildadddependencies"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/buildaddgit"
 	"github.com/jfrog/jfrog-cli/docs/artifactory/buildclean"
@@ -92,9 +99,6 @@ import (
 	"github.com/jfrog/jfrog-cli/docs/artifactory/use"
 	"github.com/jfrog/jfrog-cli/docs/common"
 	"github.com/jfrog/jfrog-cli/utils/cliutils"
-	"github.com/jfrog/jfrog-cli/utils/config"
-	"github.com/jfrog/jfrog-cli/utils/ioutils"
-	logUtils "github.com/jfrog/jfrog-cli/utils/log"
 	buildinfocmd "github.com/jfrog/jfrog-client-go/artifactory/buildinfo"
 	"github.com/jfrog/jfrog-client-go/artifactory/services"
 	distributionServices "github.com/jfrog/jfrog-client-go/distribution/services"
@@ -111,10 +115,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.Config),
 			Aliases:      []string{"c"},
 			Usage:        configdocs.Description,
-			HelpName:     common.CreateUsage("rt config", configdocs.Description, configdocs.Usage),
+			HelpName:     corecommon.CreateUsage("rt config", configdocs.Description, configdocs.Usage),
 			UsageText:    configdocs.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc("show", "delete", "clear", "import", "export"),
+			BashComplete: corecommon.CreateBashCompletionFunc("show", "delete", "clear", "import", "export"),
 			Action: func(c *cli.Context) error {
 				return configCmd(c)
 			},
@@ -122,10 +126,10 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "use",
 			Usage:        use.Description,
-			HelpName:     common.CreateUsage("rt use", use.Description, use.Usage),
+			HelpName:     corecommon.CreateUsage("rt use", use.Description, use.Usage),
 			UsageText:    use.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(commands.GetAllArtifactoryServerIds()...),
+			BashComplete: corecommon.CreateBashCompletionFunc(commands.GetAllArtifactoryServerIds()...),
 			Action: func(c *cli.Context) error {
 				return useCmd(c)
 			},
@@ -135,10 +139,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags("upload"), //(cliutils.Upload),
 			Aliases:      []string{"u"},
 			Usage:        upload.Description,
-			HelpName:     common.CreateUsage("rt upload", upload.Description, upload.Usage),
+			HelpName:     corecommon.CreateUsage("rt upload", upload.Description, upload.Usage),
 			UsageText:    upload.Arguments,
 			ArgsUsage:    common.CreateEnvVars(upload.EnvVar),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return uploadCmd(c)
 			},
@@ -148,10 +152,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.Download),
 			Aliases:      []string{"dl"},
 			Usage:        download.Description,
-			HelpName:     common.CreateUsage("rt download", download.Description, download.Usage),
+			HelpName:     corecommon.CreateUsage("rt download", download.Description, download.Usage),
 			UsageText:    download.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return downloadCmd(c)
 			},
@@ -161,10 +165,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.Move),
 			Aliases:      []string{"mv"},
 			Usage:        move.Description,
-			HelpName:     common.CreateUsage("rt move", move.Description, move.Usage),
+			HelpName:     corecommon.CreateUsage("rt move", move.Description, move.Usage),
 			UsageText:    move.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return moveCmd(c)
 			},
@@ -174,10 +178,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.Copy),
 			Aliases:      []string{"cp"},
 			Usage:        copydocs.Description,
-			HelpName:     common.CreateUsage("rt copy", copydocs.Description, copydocs.Usage),
+			HelpName:     corecommon.CreateUsage("rt copy", copydocs.Description, copydocs.Usage),
 			UsageText:    copydocs.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return copyCmd(c)
 			},
@@ -187,10 +191,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.Delete),
 			Aliases:      []string{"del"},
 			Usage:        delete.Description,
-			HelpName:     common.CreateUsage("rt delete", delete.Description, delete.Usage),
+			HelpName:     corecommon.CreateUsage("rt delete", delete.Description, delete.Usage),
 			UsageText:    delete.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return deleteCmd(c)
 			},
@@ -200,10 +204,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.Search),
 			Aliases:      []string{"s"},
 			Usage:        search.Description,
-			HelpName:     common.CreateUsage("rt search", search.Description, search.Usage),
+			HelpName:     corecommon.CreateUsage("rt search", search.Description, search.Usage),
 			UsageText:    search.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return searchCmd(c)
 			},
@@ -213,10 +217,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.Properties),
 			Aliases:      []string{"sp"},
 			Usage:        setprops.Description,
-			HelpName:     common.CreateUsage("rt set-props", setprops.Description, setprops.Usage),
+			HelpName:     corecommon.CreateUsage("rt set-props", setprops.Description, setprops.Usage),
 			UsageText:    setprops.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return setPropsCmd(c)
 			},
@@ -226,10 +230,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.Properties),
 			Aliases:      []string{"delp"},
 			Usage:        deleteprops.Description,
-			HelpName:     common.CreateUsage("rt delete-props", deleteprops.Description, deleteprops.Usage),
+			HelpName:     corecommon.CreateUsage("rt delete-props", deleteprops.Description, deleteprops.Usage),
 			UsageText:    deleteprops.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return deletePropsCmd(c)
 			},
@@ -239,10 +243,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.BuildPublish),
 			Aliases:      []string{"bp"},
 			Usage:        buildpublish.Description,
-			HelpName:     common.CreateUsage("rt build-publish", buildpublish.Description, buildpublish.Usage),
+			HelpName:     corecommon.CreateUsage("rt build-publish", buildpublish.Description, buildpublish.Usage),
 			UsageText:    buildpublish.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return buildPublishCmd(c)
 			},
@@ -251,10 +255,10 @@ func GetCommands() []cli.Command {
 			Name:         "build-collect-env",
 			Aliases:      []string{"bce"},
 			Usage:        buildcollectenv.Description,
-			HelpName:     common.CreateUsage("rt build-collect-env", buildcollectenv.Description, buildcollectenv.Usage),
+			HelpName:     corecommon.CreateUsage("rt build-collect-env", buildcollectenv.Description, buildcollectenv.Usage),
 			UsageText:    buildcollectenv.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return buildCollectEnvCmd(c)
 			},
@@ -264,10 +268,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.BuildAddDependencies),
 			Aliases:      []string{"bad"},
 			Usage:        buildadddependencies.Description,
-			HelpName:     common.CreateUsage("rt build-add-dependencies", buildadddependencies.Description, buildadddependencies.Usage),
+			HelpName:     corecommon.CreateUsage("rt build-add-dependencies", buildadddependencies.Description, buildadddependencies.Usage),
 			UsageText:    buildadddependencies.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return buildAddDependenciesCmd(c)
 			},
@@ -277,10 +281,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.BuildAddGit),
 			Aliases:      []string{"bag"},
 			Usage:        buildaddgit.Description,
-			HelpName:     common.CreateUsage("rt build-add-git", buildaddgit.Description, buildaddgit.Usage),
+			HelpName:     corecommon.CreateUsage("rt build-add-git", buildaddgit.Description, buildaddgit.Usage),
 			UsageText:    buildaddgit.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return buildAddGitCmd(c)
 			},
@@ -290,10 +294,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.BuildScan),
 			Aliases:      []string{"bs"},
 			Usage:        buildscan.Description,
-			HelpName:     common.CreateUsage("rt build-scan", buildscan.Description, buildscan.Usage),
+			HelpName:     corecommon.CreateUsage("rt build-scan", buildscan.Description, buildscan.Usage),
 			UsageText:    buildscan.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return buildScanCmd(c)
 			},
@@ -302,10 +306,10 @@ func GetCommands() []cli.Command {
 			Name:         "build-clean",
 			Aliases:      []string{"bc"},
 			Usage:        buildclean.Description,
-			HelpName:     common.CreateUsage("rt build-clean", buildclean.Description, buildclean.Usage),
+			HelpName:     corecommon.CreateUsage("rt build-clean", buildclean.Description, buildclean.Usage),
 			UsageText:    buildclean.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return buildCleanCmd(c)
 			},
@@ -315,10 +319,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.BuildPromote),
 			Aliases:      []string{"bpr"},
 			Usage:        buildpromote.Description,
-			HelpName:     common.CreateUsage("rt build-promote", buildpromote.Description, buildpromote.Usage),
+			HelpName:     corecommon.CreateUsage("rt build-promote", buildpromote.Description, buildpromote.Usage),
 			UsageText:    buildpromote.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return buildPromoteCmd(c)
 			},
@@ -328,10 +332,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.BuildDistribute),
 			Aliases:      []string{"bd"},
 			Usage:        builddistribute.Description,
-			HelpName:     common.CreateUsage("rt build-distribute", builddistribute.Description, builddistribute.Usage),
+			HelpName:     corecommon.CreateUsage("rt build-distribute", builddistribute.Description, builddistribute.Usage),
 			UsageText:    builddistribute.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return buildDistributeCmd(c)
 			},
@@ -341,10 +345,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.BuildDiscard),
 			Aliases:      []string{"bdi"},
 			Usage:        builddiscard.Description,
-			HelpName:     common.CreateUsage("rt build-discard", builddiscard.Description, builddiscard.Usage),
+			HelpName:     corecommon.CreateUsage("rt build-discard", builddiscard.Description, builddiscard.Usage),
 			UsageText:    builddiscard.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return buildDiscardCmd(c)
 			},
@@ -354,10 +358,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.GitLfsClean),
 			Aliases:      []string{"glc"},
 			Usage:        gitlfsclean.Description,
-			HelpName:     common.CreateUsage("rt git-lfs-clean", gitlfsclean.Description, gitlfsclean.Usage),
+			HelpName:     corecommon.CreateUsage("rt git-lfs-clean", gitlfsclean.Description, gitlfsclean.Usage),
 			UsageText:    gitlfsclean.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return gitLfsCleanCmd(c)
 			},
@@ -367,9 +371,9 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"mvnc"},
 			Flags:        cliutils.GetCommandFlags(cliutils.MvnConfig),
 			Usage:        mvnconfig.Description,
-			HelpName:     common.CreateUsage("rt mvn-config", mvnconfig.Description, mvnconfig.Usage),
+			HelpName:     corecommon.CreateUsage("rt mvn-config", mvnconfig.Description, mvnconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return createMvnConfigCmd(c)
 			},
@@ -378,11 +382,11 @@ func GetCommands() []cli.Command {
 			Name:            "mvn",
 			Flags:           cliutils.GetCommandFlags(cliutils.Mvn),
 			Usage:           mvndoc.Description,
-			HelpName:        common.CreateUsage("rt mvn", mvndoc.Description, mvndoc.Usage),
+			HelpName:        corecommon.CreateUsage("rt mvn", mvndoc.Description, mvndoc.Usage),
 			UsageText:       mvndoc.Arguments,
 			ArgsUsage:       common.CreateEnvVars(mvndoc.EnvVar),
 			SkipFlagParsing: shouldSkipMavenFlagParsing(),
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return mvnCmd(c)
 			},
@@ -392,9 +396,9 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"gradlec"},
 			Flags:        cliutils.GetCommandFlags(cliutils.GradleConfig),
 			Usage:        gradleconfig.Description,
-			HelpName:     common.CreateUsage("rt gradle-config", gradleconfig.Description, gradleconfig.Usage),
+			HelpName:     corecommon.CreateUsage("rt gradle-config", gradleconfig.Description, gradleconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return createGradleConfigCmd(c)
 			},
@@ -403,11 +407,11 @@ func GetCommands() []cli.Command {
 			Name:            "gradle",
 			Flags:           cliutils.GetCommandFlags(cliutils.Gradle),
 			Usage:           gradledoc.Description,
-			HelpName:        common.CreateUsage("rt gradle", gradledoc.Description, gradledoc.Usage),
+			HelpName:        corecommon.CreateUsage("rt gradle", gradledoc.Description, gradledoc.Usage),
 			UsageText:       gradledoc.Arguments,
 			ArgsUsage:       common.CreateEnvVars(gradledoc.EnvVar),
 			SkipFlagParsing: shouldSkipGradleFlagParsing(),
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return gradleCmd(c)
 			},
@@ -417,10 +421,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.DockerPromote),
 			Aliases:      []string{"dpr"},
 			Usage:        dockerpromote.Description,
-			HelpName:     common.CreateUsage("rt docker-promote", dockerpromote.Description, dockerpromote.Usage),
+			HelpName:     corecommon.CreateUsage("rt docker-promote", dockerpromote.Description, dockerpromote.Usage),
 			UsageText:    dockerpromote.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return dockerPromoteCmd(c)
 			},
@@ -430,10 +434,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.DockerPush),
 			Aliases:      []string{"dp"},
 			Usage:        dockerpush.Description,
-			HelpName:     common.CreateUsage("rt docker-push", dockerpush.Description, dockerpush.Usage),
+			HelpName:     corecommon.CreateUsage("rt docker-push", dockerpush.Description, dockerpush.Usage),
 			UsageText:    dockerpush.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return dockerPushCmd(c)
 			},
@@ -443,10 +447,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.DockerPull),
 			Aliases:      []string{"dpl"},
 			Usage:        dockerpull.Description,
-			HelpName:     common.CreateUsage("rt docker-pull", dockerpull.Description, dockerpull.Usage),
+			HelpName:     corecommon.CreateUsage("rt docker-pull", dockerpull.Description, dockerpull.Usage),
 			UsageText:    dockerpull.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return dockerPullCmd(c)
 			},
@@ -456,9 +460,9 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.NpmConfig),
 			Aliases:      []string{"npmc"},
 			Usage:        npmconfig.Description,
-			HelpName:     common.CreateUsage("rt npm-config", npmconfig.Description, npmconfig.Usage),
+			HelpName:     corecommon.CreateUsage("rt npm-config", npmconfig.Description, npmconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return createNpmConfigCmd(c)
 			},
@@ -468,11 +472,11 @@ func GetCommands() []cli.Command {
 			Flags:           cliutils.GetCommandFlags(cliutils.Npm),
 			Aliases:         []string{"npmi"},
 			Usage:           npminstall.Description,
-			HelpName:        common.CreateUsage("rt npm-install", npminstall.Description, npminstall.Usage),
+			HelpName:        corecommon.CreateUsage("rt npm-install", npminstall.Description, npminstall.Usage),
 			UsageText:       npminstall.Arguments,
 			ArgsUsage:       common.CreateEnvVars(),
 			SkipFlagParsing: shouldSkipNpmFlagParsing(),
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return npmInstallOrCiCmd(c, npm.NewNpmInstallCommand(), npmLegacyInstallCmd)
 			},
@@ -482,11 +486,11 @@ func GetCommands() []cli.Command {
 			Flags:           cliutils.GetCommandFlags(cliutils.Npm),
 			Aliases:         []string{"npmci"},
 			Usage:           npmci.Description,
-			HelpName:        common.CreateUsage("rt npm-ci", npmci.Description, npmci.Usage),
+			HelpName:        corecommon.CreateUsage("rt npm-ci", npmci.Description, npmci.Usage),
 			UsageText:       npmci.Arguments,
 			ArgsUsage:       common.CreateEnvVars(),
 			SkipFlagParsing: shouldSkipNpmFlagParsing(),
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return npmInstallOrCiCmd(c, npm.NewNpmCiCommand(), npmLegacyCiCmd)
 			},
@@ -496,10 +500,10 @@ func GetCommands() []cli.Command {
 			Flags:           cliutils.GetCommandFlags(cliutils.NpmPublish),
 			Aliases:         []string{"npmp"},
 			Usage:           npmpublish.Description,
-			HelpName:        common.CreateUsage("rt npm-publish", npmpublish.Description, npmpublish.Usage),
+			HelpName:        corecommon.CreateUsage("rt npm-publish", npmpublish.Description, npmpublish.Usage),
 			ArgsUsage:       common.CreateEnvVars(),
 			SkipFlagParsing: shouldSkipNpmFlagParsing(),
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return npmPublishCmd(c)
 			},
@@ -509,9 +513,9 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.NugetConfig),
 			Aliases:      []string{"nugetc"},
 			Usage:        nugetconfig.Description,
-			HelpName:     common.CreateUsage("rt nuget-config", nugetconfig.Description, nugetconfig.Usage),
+			HelpName:     corecommon.CreateUsage("rt nuget-config", nugetconfig.Description, nugetconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return createNugetConfigCmd(c)
 			},
@@ -520,11 +524,11 @@ func GetCommands() []cli.Command {
 			Name:            "nuget",
 			Flags:           cliutils.GetCommandFlags(cliutils.Nuget),
 			Usage:           nugetdocs.Description,
-			HelpName:        common.CreateUsage("rt nuget", nugetdocs.Description, nugetdocs.Usage),
+			HelpName:        corecommon.CreateUsage("rt nuget", nugetdocs.Description, nugetdocs.Usage),
 			UsageText:       nugetdocs.Arguments,
 			ArgsUsage:       common.CreateEnvVars(),
 			SkipFlagParsing: shouldSkipNugetFlagParsing(),
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return nugetCmd(c)
 			},
@@ -533,10 +537,10 @@ func GetCommands() []cli.Command {
 			Name:         "nuget-deps-tree",
 			Aliases:      []string{"ndt"},
 			Usage:        nugettree.Description,
-			HelpName:     common.CreateUsage("rt nuget-deps-tree", nugettree.Description, nugettree.Usage),
+			HelpName:     corecommon.CreateUsage("rt nuget-deps-tree", nugettree.Description, nugettree.Usage),
 			UsageText:    nugettree.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return nugetDepsTreeCmd(c)
 			},
@@ -546,9 +550,9 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.DotnetConfig),
 			Aliases:      []string{"dotnetc"},
 			Usage:        dotnetconfig.Description,
-			HelpName:     common.CreateUsage("rt dotnet-config", dotnetconfig.Description, dotnetconfig.Usage),
+			HelpName:     corecommon.CreateUsage("rt dotnet-config", dotnetconfig.Description, dotnetconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return createDotnetConfigCmd(c)
 			},
@@ -557,11 +561,11 @@ func GetCommands() []cli.Command {
 			Name:            "dotnet",
 			Flags:           cliutils.GetCommandFlags(cliutils.Dotnet),
 			Usage:           dotnetdocs.Description,
-			HelpName:        common.CreateUsage("rt dotnet", dotnetdocs.Description, dotnetdocs.Usage),
+			HelpName:        corecommon.CreateUsage("rt dotnet", dotnetdocs.Description, dotnetdocs.Usage),
 			UsageText:       dotnetdocs.Arguments,
 			ArgsUsage:       common.CreateEnvVars(),
 			SkipFlagParsing: true,
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return dotnetCmd(c)
 			},
@@ -570,9 +574,9 @@ func GetCommands() []cli.Command {
 			Name:         "go-config",
 			Flags:        cliutils.GetCommandFlags(cliutils.GoConfig),
 			Usage:        goconfig.Description,
-			HelpName:     common.CreateUsage("rt go-config", goconfig.Description, goconfig.Usage),
+			HelpName:     corecommon.CreateUsage("rt go-config", goconfig.Description, goconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return createGoConfigCmd(c)
 			},
@@ -582,10 +586,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.GoPublish),
 			Aliases:      []string{"gp"},
 			Usage:        gopublish.Description,
-			HelpName:     common.CreateUsage("rt go-publish", gopublish.Description, gopublish.Usage),
+			HelpName:     corecommon.CreateUsage("rt go-publish", gopublish.Description, gopublish.Usage),
 			UsageText:    gopublish.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return goPublishCmd(c)
 			},
@@ -595,11 +599,11 @@ func GetCommands() []cli.Command {
 			Flags:           cliutils.GetCommandFlags(cliutils.Go),
 			Aliases:         []string{"go"},
 			Usage:           gocommand.Description,
-			HelpName:        common.CreateUsage("rt go", gocommand.Description, gocommand.Usage),
+			HelpName:        corecommon.CreateUsage("rt go", gocommand.Description, gocommand.Usage),
 			UsageText:       gocommand.Arguments,
 			ArgsUsage:       common.CreateEnvVars(),
 			SkipFlagParsing: shouldSkipGoFlagParsing(),
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return goCmd(c)
 			},
@@ -609,10 +613,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.GoRecursivePublish),
 			Aliases:      []string{"grp"},
 			Usage:        gorecursivepublish.Description,
-			HelpName:     common.CreateUsage("rt grp", gorecursivepublish.Description, gorecursivepublish.Usage),
+			HelpName:     corecommon.CreateUsage("rt grp", gorecursivepublish.Description, gorecursivepublish.Usage),
 			UsageText:    gorecursivepublish.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return goRecursivePublishCmd(c)
 			},
@@ -622,10 +626,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.Ping),
 			Aliases:      []string{"p"},
 			Usage:        ping.Description,
-			HelpName:     common.CreateUsage("rt ping", ping.Description, ping.Usage),
+			HelpName:     corecommon.CreateUsage("rt ping", ping.Description, ping.Usage),
 			UsageText:    ping.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return pingCmd(c)
 			},
@@ -635,10 +639,10 @@ func GetCommands() []cli.Command {
 			Flags:           cliutils.GetCommandFlags(cliutils.Curl),
 			Aliases:         []string{"cl"},
 			Usage:           curldocs.Description,
-			HelpName:        common.CreateUsage("rt curl", curldocs.Description, curldocs.Usage),
+			HelpName:        corecommon.CreateUsage("rt curl", curldocs.Description, curldocs.Usage),
 			UsageText:       curldocs.Arguments,
 			ArgsUsage:       common.CreateEnvVars(),
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			SkipFlagParsing: true,
 			Action: func(c *cli.Context) error {
 				return curlCmd(c)
@@ -649,9 +653,9 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.PipConfig),
 			Aliases:      []string{"pipc"},
 			Usage:        pipconfig.Description,
-			HelpName:     common.CreateUsage("rt pipc", pipconfig.Description, pipconfig.Usage),
+			HelpName:     corecommon.CreateUsage("rt pipc", pipconfig.Description, pipconfig.Usage),
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return createPipConfigCmd(c)
 			},
@@ -661,11 +665,11 @@ func GetCommands() []cli.Command {
 			Flags:           cliutils.GetCommandFlags(cliutils.PipInstall),
 			Aliases:         []string{"pipi"},
 			Usage:           pipinstall.Description,
-			HelpName:        common.CreateUsage("rt pipi", pipinstall.Description, pipinstall.Usage),
+			HelpName:        corecommon.CreateUsage("rt pipi", pipinstall.Description, pipinstall.Usage),
 			UsageText:       pipinstall.Arguments,
 			ArgsUsage:       common.CreateEnvVars(),
 			SkipFlagParsing: true,
-			BashComplete:    common.CreateBashCompletionFunc(),
+			BashComplete:    corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return pipInstallCmd(c)
 			},
@@ -675,10 +679,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleCreate),
 			Aliases:      []string{"rbc"},
 			Usage:        releasebundlecreate.Description,
-			HelpName:     common.CreateUsage("rt rbc", releasebundlecreate.Description, releasebundlecreate.Usage),
+			HelpName:     corecommon.CreateUsage("rt rbc", releasebundlecreate.Description, releasebundlecreate.Usage),
 			UsageText:    releasebundlecreate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return releaseBundleCreateCmd(c)
 			},
@@ -688,10 +692,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleUpdate),
 			Aliases:      []string{"rbu"},
 			Usage:        releasebundleupdate.Description,
-			HelpName:     common.CreateUsage("rt rbu", releasebundleupdate.Description, releasebundleupdate.Usage),
+			HelpName:     corecommon.CreateUsage("rt rbu", releasebundleupdate.Description, releasebundleupdate.Usage),
 			UsageText:    releasebundleupdate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return releaseBundleUpdateCmd(c)
 			},
@@ -701,10 +705,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleSign),
 			Aliases:      []string{"rbs"},
 			Usage:        releasebundlesign.Description,
-			HelpName:     common.CreateUsage("rt rbs", releasebundlesign.Description, releasebundlesign.Usage),
+			HelpName:     corecommon.CreateUsage("rt rbs", releasebundlesign.Description, releasebundlesign.Usage),
 			UsageText:    releasebundlesign.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return releaseBundleSignCmd(c)
 			},
@@ -714,10 +718,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleDistribute),
 			Aliases:      []string{"rbd"},
 			Usage:        releasebundledistribute.Description,
-			HelpName:     common.CreateUsage("rt rbd", releasebundledistribute.Description, releasebundledistribute.Usage),
+			HelpName:     corecommon.CreateUsage("rt rbd", releasebundledistribute.Description, releasebundledistribute.Usage),
 			UsageText:    releasebundledistribute.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return releaseBundleDistributeCmd(c)
 			},
@@ -727,10 +731,10 @@ func GetCommands() []cli.Command {
 			Flags:        cliutils.GetCommandFlags(cliutils.ReleaseBundleDelete),
 			Aliases:      []string{"rbdel"},
 			Usage:        releasebundledelete.Description,
-			HelpName:     common.CreateUsage("rt rbdel", releasebundledelete.Description, releasebundledelete.Usage),
+			HelpName:     corecommon.CreateUsage("rt rbdel", releasebundledelete.Description, releasebundledelete.Usage),
 			UsageText:    releasebundledelete.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return releaseBundleDeleteCmd(c)
 			},
@@ -739,10 +743,10 @@ func GetCommands() []cli.Command {
 			Name:         "repo-template",
 			Aliases:      []string{"rpt"},
 			Usage:        repotemplate.Description,
-			HelpName:     common.CreateUsage("rt rpt", repotemplate.Description, repotemplate.Usage),
+			HelpName:     corecommon.CreateUsage("rt rpt", repotemplate.Description, repotemplate.Usage),
 			UsageText:    repotemplate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return repoTemplateCmd(c)
 			},
@@ -752,10 +756,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"rc"},
 			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        repocreate.Description,
-			HelpName:     common.CreateUsage("rt rc", repocreate.Description, repocreate.Usage),
+			HelpName:     corecommon.CreateUsage("rt rc", repocreate.Description, repocreate.Usage),
 			UsageText:    repocreate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return repoCreateCmd(c)
 			},
@@ -765,10 +769,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"ru"},
 			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        repoupdate.Description,
-			HelpName:     common.CreateUsage("rt ru", repoupdate.Description, repoupdate.Usage),
+			HelpName:     corecommon.CreateUsage("rt ru", repoupdate.Description, repoupdate.Usage),
 			UsageText:    repoupdate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return repoUpdateCmd(c)
 			},
@@ -778,10 +782,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"rdel"},
 			Flags:        cliutils.GetCommandFlags(cliutils.RepoDelete),
 			Usage:        repodelete.Description,
-			HelpName:     common.CreateUsage("rt rdel", repodelete.Description, repodelete.Usage),
+			HelpName:     corecommon.CreateUsage("rt rdel", repodelete.Description, repodelete.Usage),
 			UsageText:    repodelete.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return repoDeleteCmd(c)
 			},
@@ -791,10 +795,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"rplt"},
 			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        replicationtemplate.Description,
-			HelpName:     common.CreateUsage("rt rplt", replicationtemplate.Description, replicationtemplate.Usage),
+			HelpName:     corecommon.CreateUsage("rt rplt", replicationtemplate.Description, replicationtemplate.Usage),
 			UsageText:    replicationtemplate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return replicationTemplateCmd(c)
 			},
@@ -804,10 +808,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"rplc"},
 			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        replicationcreate.Description,
-			HelpName:     common.CreateUsage("rt rplc", replicationcreate.Description, replicationcreate.Usage),
+			HelpName:     corecommon.CreateUsage("rt rplc", replicationcreate.Description, replicationcreate.Usage),
 			UsageText:    replicationcreate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return replicationCreateCmd(c)
 			},
@@ -817,10 +821,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"rpldel"},
 			Flags:        cliutils.GetCommandFlags(cliutils.ReplicationDelete),
 			Usage:        replicationdelete.Description,
-			HelpName:     common.CreateUsage("rt rpldel", replicationdelete.Description, replicationdelete.Usage),
+			HelpName:     corecommon.CreateUsage("rt rpldel", replicationdelete.Description, replicationdelete.Usage),
 			UsageText:    replicationdelete.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return replicationDeleteCmd(c)
 			},
@@ -829,10 +833,10 @@ func GetCommands() []cli.Command {
 			Name:         "permission-target-template",
 			Aliases:      []string{"ptt"},
 			Usage:        permissiontargettemplate.Description,
-			HelpName:     common.CreateUsage("rt ptt", permissiontargettemplate.Description, permissiontargettemplate.Usage),
+			HelpName:     corecommon.CreateUsage("rt ptt", permissiontargettemplate.Description, permissiontargettemplate.Usage),
 			UsageText:    permissiontargettemplate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return permissionTargrtTemplateCmd(c)
 			},
@@ -842,10 +846,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"ptc"},
 			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        permissiontargetcreate.Description,
-			HelpName:     common.CreateUsage("rt ptc", permissiontargetcreate.Description, permissiontargetcreate.Usage),
+			HelpName:     corecommon.CreateUsage("rt ptc", permissiontargetcreate.Description, permissiontargetcreate.Usage),
 			UsageText:    permissiontargetcreate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return permissionTargetCreateCmd(c)
 			},
@@ -855,10 +859,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"ptu"},
 			Flags:        cliutils.GetCommandFlags(cliutils.TemplateConsumer),
 			Usage:        permissiontargetupdate.Description,
-			HelpName:     common.CreateUsage("rt ptu", permissiontargetupdate.Description, permissiontargetupdate.Usage),
+			HelpName:     corecommon.CreateUsage("rt ptu", permissiontargetupdate.Description, permissiontargetupdate.Usage),
 			UsageText:    permissiontargetupdate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return permissionTargetUpdateCmd(c)
 			},
@@ -868,10 +872,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"ptdel"},
 			Flags:        cliutils.GetCommandFlags(cliutils.PermissionTargetDelete),
 			Usage:        permissiontargetdelete.Description,
-			HelpName:     common.CreateUsage("rt ptdel", permissiontargetdelete.Description, permissiontargetdelete.Usage),
+			HelpName:     corecommon.CreateUsage("rt ptdel", permissiontargetdelete.Description, permissiontargetdelete.Usage),
 			UsageText:    permissiontargetdelete.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return permissionTargetDeleteCmd(c)
 			},
@@ -881,10 +885,10 @@ func GetCommands() []cli.Command {
 			Aliases:      []string{"atc"},
 			Flags:        cliutils.GetCommandFlags(cliutils.AccessTokenCreate),
 			Usage:        accesstokencreate.Description,
-			HelpName:     common.CreateUsage("rt atc", accesstokencreate.Description, accesstokencreate.Usage),
+			HelpName:     corecommon.CreateUsage("rt atc", accesstokencreate.Description, accesstokencreate.Usage),
 			UsageText:    accesstokencreate.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
-			BashComplete: common.CreateBashCompletionFunc(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return accessTokenCreateCmd(c)
 			},
@@ -1039,7 +1043,7 @@ func configCmd(c *cli.Context) error {
 		}
 		if c.Args()[0] == "delete" {
 			if configCommandConfiguration.Interactive {
-				if !cliutils.AskYesNo("Are you sure you want to delete \""+serverId+"\" configuration?", false) {
+				if !coreutils.AskYesNo("Are you sure you want to delete \""+serverId+"\" configuration?", false) {
 					return nil
 				}
 			}
@@ -1104,10 +1108,7 @@ func mvnCmd(c *cli.Context) error {
 		if c.NArg() < 1 {
 			return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 		}
-		args, err := utils.ParseArgs(extractCommand(c))
-		if err != nil {
-			return errorutils.CheckError(err)
-		}
+		args := cliutils.ExtractCommand(c)
 		// Validates the mvn command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 		// Otherwise, throw an error.
 		if err := validateCommand(args, cliutils.GetBasicBuildToolsFlags()); err != nil {
@@ -1145,10 +1146,7 @@ func gradleCmd(c *cli.Context) error {
 		if c.NArg() < 1 {
 			return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 		}
-		args, err := utils.ParseArgs(extractCommand(c))
-		if err != nil {
-			return errorutils.CheckError(err)
-		}
+		args := cliutils.ExtractCommand(c)
 		// Validates the gradle command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 		// Otherwise, throw an error.
 		if err := validateCommand(args, cliutils.GetBasicBuildToolsFlags()); err != nil {
@@ -1279,10 +1277,8 @@ func nugetCmd(c *cli.Context) error {
 			return err
 		}
 
-		args, err := utils.ParseArgs(extractCommand(c))
-		if err != nil {
-			return errorutils.CheckError(err)
-		}
+		args := cliutils.ExtractCommand(c)
+
 		// Validates the nuget command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 		// Otherwise, throw an error.
 		if err := validateCommand(args, cliutils.GetLegacyNugetFlags()); err != nil {
@@ -1360,10 +1356,7 @@ func dotnetCmd(c *cli.Context) error {
 		return err
 	}
 
-	args, err := utils.ParseArgs(extractCommand(c))
-	if err != nil {
-		return errorutils.CheckError(err)
-	}
+	args := cliutils.ExtractCommand(c)
 
 	filteredDotnetArgs, buildConfiguration, err := utils.ExtractBuildDetailsFromArgs(args)
 	if err != nil {
@@ -1420,10 +1413,7 @@ func npmInstallOrCiCmd(c *cli.Context, npmCmd *npm.NpmInstallOrCiCommand, npmLeg
 
 	if exists {
 		// Found a config file. Continue as native command.
-		args, err := utils.ParseArgs(extractCommand(c))
-		if err != nil {
-			return errorutils.CheckError(err)
-		}
+		args := cliutils.ExtractCommand(c)
 		// Validates the npm command. If a config file is found, the only flags that can be used are threads, build-name, build-number and module.
 		// Otherwise, throw an error.
 		if err := validateCommand(args, cliutils.GetLegacyNpmFlags()); err != nil {
@@ -1469,10 +1459,7 @@ func npmPublishCmd(c *cli.Context) error {
 	}
 	if exists {
 		// Found a config file. Continue as native command.
-		args, err := utils.ParseArgs(extractCommand(c))
-		if err != nil {
-			return errorutils.CheckError(err)
-		}
+		args := cliutils.ExtractCommand(c)
 		// Validates the npm command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 		// Otherwise, throw an error.
 		if err := validateCommand(args, cliutils.GetLegacyNpmFlags()); err != nil {
@@ -1561,7 +1548,7 @@ func shouldSkipGoFlagParsing() bool {
 
 	_, exists, err := utils.GetProjectConfFilePath(utils.Go)
 	if err != nil {
-		cliutils.ExitOnErr(err)
+		coreutils.ExitOnErr(err)
 	}
 	return exists
 }
@@ -1575,7 +1562,7 @@ func shouldSkipNpmFlagParsing() bool {
 
 	_, exists, err := utils.GetProjectConfFilePath(utils.Npm)
 	if err != nil {
-		cliutils.ExitOnErr(err)
+		coreutils.ExitOnErr(err)
 	}
 	return exists
 }
@@ -1589,7 +1576,7 @@ func shouldSkipNugetFlagParsing() bool {
 
 	_, exists, err := utils.GetProjectConfFilePath(utils.Nuget)
 	if err != nil {
-		cliutils.ExitOnErr(err)
+		coreutils.ExitOnErr(err)
 	}
 	return exists
 }
@@ -1602,7 +1589,7 @@ func shouldSkipMavenFlagParsing() bool {
 	}
 	_, exists, err := utils.GetProjectConfFilePath(utils.Maven)
 	if err != nil {
-		cliutils.ExitOnErr(err)
+		coreutils.ExitOnErr(err)
 	}
 	return exists
 }
@@ -1615,7 +1602,7 @@ func shouldSkipGradleFlagParsing() bool {
 	}
 	_, exists, err := utils.GetProjectConfFilePath(utils.Gradle)
 	if err != nil {
-		cliutils.ExitOnErr(err)
+		coreutils.ExitOnErr(err)
 	}
 	return exists
 }
@@ -1684,7 +1671,7 @@ func goNativeCmd(c *cli.Context, configFilePath string) error {
 	if c.NArg() < 1 {
 		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 	}
-	args := extractCommand(c)
+	args := cliutils.ExtractCommand(c)
 	// Validates the go command. If a config file is found, the only flags that can be used are build-name, build-number and module.
 	// Otherwise, throw an error.
 	if err := validateCommand(args, cliutils.GetLegacyGoFlags()); err != nil {
@@ -1819,9 +1806,9 @@ func downloadCmd(c *cli.Context) error {
 		return err
 	}
 	downloadCommand := generic.NewDownloadCommand()
-	downloadCommand.SetConfiguration(configuration).SetBuildConfiguration(buildConfiguration).SetSpec(downloadSpec).SetRtDetails(rtDetails).SetDryRun(c.Bool("dry-run")).SetSyncDeletesPath(c.String("sync-deletes")).SetQuiet(cliutils.GetQuietValue(c)).SetDetailedSummaryt(c.Bool("detailed-summary"))
-	err = commands.Exec(downloadCommand)
-	defer logUtils.CloseLogFile(downloadCommand.LogFile())
+	downloadCommand.SetConfiguration(configuration).SetBuildConfiguration(buildConfiguration).SetSpec(downloadSpec).SetRtDetails(rtDetails).SetDryRun(c.Bool("dry-run")).SetSyncDeletesPath(c.String("sync-deletes")).SetQuiet(cliutils.GetQuietValue(c)).SetDetailedSummary(c.Bool("detailed-summary"))
+
+	err = execWithProgress(downloadCommand)
 	result := downloadCommand.Result()
 	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), result.Reader(), rtDetails.Url, err)
 
@@ -1864,13 +1851,32 @@ func uploadCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	uploadCmd.SetUploadConfiguration(configuration).SetBuildConfiguration(buildConfiguration).SetSpec(uploadSpec).SetRtDetails(rtDetails).SetDryRun(c.Bool("dry-run")).SetSyncDeletesPath(c.String("sync-deletes")).SetQuiet(cliutils.GetQuietValue(c))
-	err = commands.Exec(uploadCmd)
-	defer logUtils.CloseLogFile(uploadCmd.LogFile())
+	uploadCmd.SetUploadConfiguration(configuration).SetBuildConfiguration(buildConfiguration).SetSpec(uploadSpec).SetRtDetails(rtDetails).SetDryRun(c.Bool("dry-run")).SetSyncDeletesPath(c.String("sync-deletes")).SetQuiet(cliutils.GetQuietValue(c)).SetDetailedSummary(c.Bool("detailed-summary"))
+
+	err = execWithProgress(uploadCmd)
 	result := uploadCmd.Result()
-	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), nil, "", err)
+	err = cliutils.PrintSummaryReport(result.SuccessCount(), result.FailCount(), result.Reader(), "", err)
 
 	return cliutils.GetCliError(err, result.SuccessCount(), result.FailCount(), isFailNoOp(c))
+}
+
+type CommandWithProgress interface {
+	commands.Command
+	SetProgress(ioUtils.Progress)
+}
+
+func execWithProgress(cmd CommandWithProgress) error {
+	// Init progress bar.
+	progressBar, logFile, err := progressbar.InitProgressBarIfPossible()
+	if err != nil {
+		return err
+	}
+	if progressBar != nil {
+		cmd.SetProgress(progressBar)
+		defer logUtils.CloseLogFile(logFile)
+		defer progressBar.Quit()
+	}
+	return commands.Exec(cmd)
 }
 
 func moveCmd(c *cli.Context) error {
@@ -2209,11 +2215,11 @@ func buildScanCmd(c *cli.Context) error {
 func checkBuildScanError(err error) error {
 	// If the build was found vulnerable, exit with ExitCodeVulnerableBuild.
 	if err == utils.GetBuildScanError() {
-		return cliutils.CliError{ExitCode: cliutils.ExitCodeVulnerableBuild, ErrorMsg: err.Error()}
+		return coreutils.CliError{ExitCode: coreutils.ExitCodeVulnerableBuild, ErrorMsg: err.Error()}
 	}
 	// If the scan operation failed, for example due to HTTP timeout, exit with ExitCodeError.
 	if err != nil {
-		return cliutils.CliError{ExitCode: cliutils.ExitCodeError, ErrorMsg: err.Error()}
+		return coreutils.CliError{ExitCode: coreutils.ExitCodeError, ErrorMsg: err.Error()}
 	}
 	return nil
 }
@@ -2451,7 +2457,7 @@ func curlCmd(c *cli.Context) error {
 	if c.NArg() < 1 {
 		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 	}
-	curlCommand := curl.NewCurlCommand().SetArguments(extractCommand(c))
+	curlCommand := curl.NewCurlCommand().SetArguments(cliutils.ExtractCommand(c))
 	rtDetails, err := curlCommand.GetArtifactoryDetails()
 	if err != nil {
 		return err
@@ -2484,7 +2490,7 @@ func pipInstallCmd(c *cli.Context) error {
 
 	// Run command.
 	pipCmd := pip.NewPipInstallCommand()
-	pipCmd.SetRtDetails(rtDetails).SetRepo(pipConfig.TargetRepo()).SetArgs(extractCommand(c))
+	pipCmd.SetRtDetails(rtDetails).SetRepo(pipConfig.TargetRepo()).SetArgs(cliutils.ExtractCommand(c))
 	return commands.Exec(pipCmd)
 }
 
@@ -2558,7 +2564,7 @@ func repoDeleteCmd(c *cli.Context) error {
 	}
 
 	repoDeleteCmd := repository.NewRepoDeleteCommand()
-	repoDeleteCmd.SetRepoKey(c.Args().Get(0)).SetRtDetails(rtDetails).SetQuiet(cliutils.GetQuietValue(c))
+	repoDeleteCmd.SetRepoPattern(c.Args().Get(0)).SetRtDetails(rtDetails).SetQuiet(cliutils.GetQuietValue(c))
 	return commands.Exec(repoDeleteCmd)
 }
 
@@ -2685,7 +2691,7 @@ func accessTokenCreateCmd(c *cli.Context) error {
 		return err
 	}
 
-	if c.NArg() != 1 {
+	if c.NArg() > 1 {
 		return cliutils.PrintHelpAndReturnError("Wrong number of arguments.", c)
 	}
 
@@ -2693,12 +2699,20 @@ func accessTokenCreateCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	// If the username is provided as an argument, then it is used when creating the token.
+	// If not, then the configured username (or the the value of the --user option) is used.
+	var userName string
+	if c.NArg() > 0 {
+		userName = c.Args().Get(0)
+	} else {
+		userName = rtDetails.GetUrl()
+	}
 	expiry, err := cliutils.GetIntFlagValue(c, "expiry", cliutils.TokenExpiry)
 	if err != nil {
 		return err
 	}
 	accessTokenCreateCmd := generic.NewAccessTokenCreateCommand()
-	accessTokenCreateCmd.SetUserName(c.Args().Get(0)).SetRtDetails(rtDetails).SetRefreshable(c.Bool("refreshable")).SetExpiry(expiry).SetGroups(c.String("groups")).SetAudience(c.String("audience")).SetGrantAdmin(c.Bool("grant-admin"))
+	accessTokenCreateCmd.SetUserName(userName).SetRtDetails(rtDetails).SetRefreshable(c.Bool("refreshable")).SetExpiry(expiry).SetGroups(c.String("groups")).SetAudience(c.String("audience")).SetGrantAdmin(c.Bool("grant-admin"))
 	err = commands.Exec(accessTokenCreateCmd)
 	if err != nil {
 		return err
@@ -2727,7 +2741,7 @@ func offerConfig(c *cli.Context) (*config.ArtifactoryDetails, error) {
 	}
 
 	var ci bool
-	if ci, err = clientutils.GetBoolEnvValue(cliutils.CI, false); err != nil {
+	if ci, err = clientutils.GetBoolEnvValue(coreutils.CI, false); err != nil {
 		return nil, err
 	}
 	var offerConfig bool
@@ -2744,7 +2758,7 @@ func offerConfig(c *cli.Context) (*config.ArtifactoryDetails, error) {
 		"Configuring JFrog CLI with these parameters now will save you having to include them as command options.\n"+
 		"You can also configure these parameters later using the 'jfrog rt c' command.\n"+
 		"Configure now?", cliutils.OfferConfig)
-	confirmed := cliutils.AskYesNo(msg, false)
+	confirmed := coreutils.AskYesNo(msg, false)
 	if !confirmed {
 		config.SaveArtifactoryConf(make([]*config.ArtifactoryDetails, 0))
 		return nil, nil
@@ -2782,6 +2796,12 @@ func createArtifactoryDetailsWithConfigOffer(c *cli.Context, excludeRefreshableT
 		return nil, err
 	}
 
+	// Take InsecureTls value from options since it is not saved in config.
+	confDetails.InsecureTls = details.InsecureTls
+	confDetails.Url = clientutils.AddTrailingSlashIfNeeded(confDetails.Url)
+	confDetails.DistributionUrl = clientutils.AddTrailingSlashIfNeeded(confDetails.DistributionUrl)
+
+	// Create initial access token if needed.
 	if !excludeRefreshableTokens {
 		err = config.CreateInitialRefreshableTokensIfNeeded(confDetails)
 		if err != nil {
@@ -2789,10 +2809,6 @@ func createArtifactoryDetailsWithConfigOffer(c *cli.Context, excludeRefreshableT
 		}
 	}
 
-	// Take InsecureTls value from options since it is not saved in config.
-	confDetails.InsecureTls = details.InsecureTls
-	confDetails.Url = clientutils.AddTrailingSlashIfNeeded(confDetails.Url)
-	confDetails.DistributionUrl = clientutils.AddTrailingSlashIfNeeded(confDetails.DistributionUrl)
 	return confDetails, nil
 }
 
@@ -2861,7 +2877,7 @@ func createDefaultCopyMoveSpec(c *cli.Context) (*spec.SpecFiles, error) {
 }
 
 func getSpec(c *cli.Context, isDownload bool) (specFiles *spec.SpecFiles, err error) {
-	specFiles, err = spec.CreateSpecFromFile(c.String("spec"), cliutils.SpecVarsStringToMap(c.String("spec-vars")))
+	specFiles, err = spec.CreateSpecFromFile(c.String("spec"), coreutils.SpecVarsStringToMap(c.String("spec-vars")))
 	if err != nil {
 		return nil, err
 	}
@@ -2944,10 +2960,10 @@ func createDefaultPropertiesSpec(c *cli.Context) (*spec.SpecFiles, error) {
 
 func createBuildInfoConfiguration(c *cli.Context) *buildinfocmd.Configuration {
 	flags := new(buildinfocmd.Configuration)
-	flags.BuildUrl = utils.GetBuildUrl(c.String("build-url"))
+	flags.BuildUrl = cliutils.GetBuildUrl(c.String("build-url"))
 	flags.DryRun = c.Bool("dry-run")
 	flags.EnvInclude = c.String("env-include")
-	flags.EnvExclude = utils.GetEnvExclude(c.String("env-exclude"))
+	flags.EnvExclude = cliutils.GetEnvExclude(c.String("env-exclude"))
 	if flags.EnvInclude == "" {
 		flags.EnvInclude = "*"
 	}
@@ -2988,7 +3004,7 @@ func createBuildDiscardConfiguration(c *cli.Context) services.DiscardBuildsParam
 	discardParamsImpl.MaxDays = c.String("max-days")
 	discardParamsImpl.ExcludeBuilds = c.String("exclude-builds")
 	discardParamsImpl.Async = c.Bool("async")
-	discardParamsImpl.BuildName = utils.GetBuildName(c.Args().Get(0))
+	discardParamsImpl.BuildName = cliutils.GetBuildName(c.Args().Get(0))
 	return discardParamsImpl
 }
 
@@ -3152,7 +3168,7 @@ func createDefaultDistributionRules(c *cli.Context) *spec.DistributionRules {
 }
 
 func getFileSystemSpec(c *cli.Context) (fsSpec *spec.SpecFiles, err error) {
-	fsSpec, err = spec.CreateSpecFromFile(c.String("spec"), cliutils.SpecVarsStringToMap(c.String("spec-vars")))
+	fsSpec, err = spec.CreateSpecFromFile(c.String("spec"), coreutils.SpecVarsStringToMap(c.String("spec-vars")))
 	if err != nil {
 		return
 	}
@@ -3165,7 +3181,7 @@ func getFileSystemSpec(c *cli.Context) (fsSpec *spec.SpecFiles, err error) {
 }
 
 func fixWinPathsForFileSystemSourcedCmds(uploadSpec *spec.SpecFiles, c *cli.Context) {
-	if cliutils.IsWindows() {
+	if coreutils.IsWindows() {
 		for i, file := range uploadSpec.Files {
 			uploadSpec.Files[i].Pattern = fixWinPathBySource(file.Pattern, c.IsSet("spec"))
 			for j, exclusion := range uploadSpec.Files[i].Exclusions {
@@ -3181,7 +3197,7 @@ func fixWinPathsForFileSystemSourcedCmds(uploadSpec *spec.SpecFiles, c *cli.Cont
 }
 
 func fixWinPathsForDownloadCmd(uploadSpec *spec.SpecFiles, c *cli.Context) {
-	if cliutils.IsWindows() {
+	if coreutils.IsWindows() {
 		for i, file := range uploadSpec.Files {
 			uploadSpec.Files[i].Target = fixWinPathBySource(file.Target, c.IsSet("spec"))
 		}
@@ -3318,13 +3334,8 @@ func createBuildConfiguration(c *cli.Context) *utils.BuildConfiguration {
 		buildNumberArg = ""
 	}
 	buildConfiguration.BuildName, buildConfiguration.BuildNumber = utils.GetBuildNameAndNumber(buildNameArg, buildNumberArg)
+	buildConfiguration.Project = c.String("project")
 	return buildConfiguration
-}
-
-func extractCommand(c *cli.Context) (command []string) {
-	command = make([]string, len(c.Args()))
-	copy(command, c.Args())
-	return command
 }
 
 func deprecatedWarning(projectType utils.ProjectType, command, configCommand string) string {

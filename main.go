@@ -1,18 +1,21 @@
 package main
 
 import (
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
+	"github.com/jfrog/jfrog-cli-core/utils/log"
+	"github.com/jfrog/jfrog-cli/docs/common"
+	"github.com/jfrog/jfrog-cli/plugins"
+	"github.com/jfrog/jfrog-cli/plugins/utils"
 	"os"
 
 	"github.com/codegangsta/cli"
 	"github.com/jfrog/jfrog-cli/artifactory"
 	"github.com/jfrog/jfrog-cli/bintray"
 	"github.com/jfrog/jfrog-cli/completion"
-	"github.com/jfrog/jfrog-cli/docs/common"
 	"github.com/jfrog/jfrog-cli/missioncontrol"
 	"github.com/jfrog/jfrog-cli/utils/cliutils"
-	"github.com/jfrog/jfrog-cli/utils/log"
 	"github.com/jfrog/jfrog-cli/xray"
-	"github.com/jfrog/jfrog-client-go/utils"
+	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
 	clientLog "github.com/jfrog/jfrog-client-go/utils/log"
 )
@@ -75,12 +78,12 @@ func main() {
 	if cleanupErr := fileutils.CleanOldDirs(); cleanupErr != nil {
 		clientLog.Warn(cleanupErr)
 	}
-	cliutils.ExitOnErr(err)
+	coreutils.ExitOnErr(err)
 }
 
 func execMain() error {
 	// Set JFrog CLI's user-agent on the jfrog-client-go.
-	utils.SetUserAgent(cliutils.GetUserAgent())
+	clientutils.SetUserAgent(coreutils.GetUserAgent())
 
 	app := cli.NewApp()
 	app.Name = "jfrog"
@@ -97,7 +100,7 @@ func execMain() error {
 }
 
 func getCommands() []cli.Command {
-	return []cli.Command{
+	cliNameSpaces := []cli.Command{
 		{
 			Name:        cliutils.CmdArtifactory,
 			Usage:       "Artifactory commands",
@@ -123,5 +126,11 @@ func getCommands() []cli.Command {
 			Usage:       "Generate autocomplete scripts",
 			Subcommands: completion.GetCommands(),
 		},
+		{
+			Name:        cliutils.CmdPlugin,
+			Usage:       "Plugins commands",
+			Subcommands: plugins.GetCommands(),
+		},
 	}
+	return append(cliNameSpaces, utils.GetPlugins()...)
 }

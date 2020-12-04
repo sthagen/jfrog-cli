@@ -8,13 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jfrog/jfrog-cli/artifactory/spec"
-	"github.com/jfrog/jfrog-cli/utils/cliutils"
-	"github.com/jfrog/jfrog-cli/utils/tests/proxy/server/certificate"
-	"github.com/stretchr/testify/assert"
-
+	"github.com/jfrog/jfrog-cli-core/artifactory/spec"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"github.com/jfrog/jfrog-cli/utils/tests"
 	cliproxy "github.com/jfrog/jfrog-cli/utils/tests/proxy/server"
+	"github.com/jfrog/jfrog-cli/utils/tests/proxy/server/certificate"
+	"github.com/stretchr/testify/assert"
 )
 
 const mavenFlagName = "maven"
@@ -24,7 +23,7 @@ const localRepoSystemProperty = "-Dmaven.repo.local="
 var localRepoDir string
 
 func cleanMavenTest() {
-	os.Unsetenv(cliutils.HomeDir)
+	os.Unsetenv(coreutils.HomeDir)
 	deleteSpec := spec.NewBuilder().Pattern(tests.MvnRepo1).BuildSpec()
 	tests.DeleteFiles(deleteSpec, artifactoryDetails)
 	deleteSpec = spec.NewBuilder().Pattern(tests.MvnRepo2).BuildSpec()
@@ -59,6 +58,21 @@ func TestNativeMavenBuildWithServerID(t *testing.T) {
 	searchSpec, err := tests.CreateSpec(tests.SearchAllMaven)
 	assert.NoError(t, err)
 	verifyExistInArtifactory(tests.GetMavenDeployedArtifacts(), searchSpec, t)
+	cleanMavenTest()
+}
+
+func TestMavenBuildWithoutDeployer(t *testing.T) {
+	initMavenTest(t, false)
+	pomPath := createMavenProject(t)
+	configFilePath := filepath.Join(filepath.FromSlash(tests.GetTestResourcesPath()), "buildspecs", "maven_without_deployer", tests.MavenConfig)
+	destPath := filepath.Join(filepath.Dir(pomPath), ".jfrog", "projects")
+	createConfigFile(destPath, configFilePath, t)
+	oldHomeDir := changeWD(t, filepath.Dir(pomPath))
+	pomPath = strings.Replace(pomPath, `\`, "/", -1) // Windows compatibility.
+	repoLocalSystemProp := localRepoSystemProperty + localRepoDir
+	runCli(t, "mvn", "clean", "install", "-f", pomPath, repoLocalSystemProp)
+	err := os.Chdir(oldHomeDir)
+	assert.NoError(t, err)
 	cleanMavenTest()
 }
 
@@ -157,6 +171,6 @@ func createHomeConfigAndLocalRepo(t *testing.T, encryptPassword bool) (err error
 	createJfrogHomeConfig(t, encryptPassword)
 	// To make sure we download the dependencies from  Artifactory, we will run with customize .m2 directory.
 	// The directory wil be deleted on the test cleanup as part as the out dir.
-	localRepoDir, err = ioutil.TempDir(os.Getenv(cliutils.HomeDir), "tmp.m2")
+	localRepoDir, err = ioutil.TempDir(os.Getenv(coreutils.HomeDir), "tmp.m2")
 	return err
 }

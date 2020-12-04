@@ -1,3 +1,52 @@
+## 1.41.2 (November 25, 2020)
+Bug fix - User prompts in plugins are invisible
+Bug fix - Occasional panic on TestInsecureTlsMavenBuild
+Bug fix - Avoid using "ParseArgs" for new syntax package manager commands
+Bug fix - Error when uploading / downloading 0 files 
+
+## 1.41.1 (November 13, 2020)
+Bug fix - With multiple JFrog CLI plugins installed, the wrong plugin gets executed 
+
+## 1.41.0 (November 12, 2020)
+New "JFrog CLI Plugins" feature
+Bug fix - "jfrog rt pip-install" fails with local repos in some scenarios
+
+## 1.40.1 (November 2, 2020)
+- Publish Linux s390x architecture binary of JFrog CLI
+- Bug fix - Upload --detailed-summary output 
+
+## 1.40.0 (October 26, 2020)
+- “jfrog rt upload” - New --detailed-summary option
+- Build-info support for “jfrog rt go get” with Artifactory
+- “jfrog rt access-token-create” - the username argument is now optional
+- “jfrog rt repo-delete” now accepts a wildcard pattern, allowing the deletion of multiple repositories
+- Allow different JFrog CLI version to use different config files formats
+- Upgrade maven and gradle extractors
+- Bug fix - “jfrog rt mvn” - not all artifacts are downloaded from Artifactory
+- Bug fix - “jfrog rt donet” does not generate build-info for projects which include vbproj files
+- Bug fix - Set / delete props is always recursive
+- Bug fix - The algorithm which turns wildcard pattern to AQL produces wrong results in some scenarios
+
+## 1.39.7 (October 13, 2020)
+- Add refreshable tokens exclusion for default server
+- Bugfix - Docker push fails to update layers properties
+
+## 1.39.6 (October 11, 2020)
+- Bug fix - docker pull fails to collect buildinfo from a remote repo
+- Bug fix - Command summary gets cut by the progress bar
+- Bug fix - Bug fix - Artifactory upload - Allow escaping slashes using back-slashes as part of the build name value
+
+## 1.39.5 (September 23, 2020)
+- Bug fix - "jfrog rt mvn install" throws `Target repository cannot be empty` even when deployment is disabled.
+- Bug fix - Download & Sync command fails in Windows environment.
+- Bug fix - Using `--insecure-tls` does not work with automatically created access token.
+
+## 1.39.4 (September 10, 2020)
+- Bug fix - Set/Delete props unified errors output.
+- Bug fix - Delete props command always returns a failure.
+- Bug fix - Fail to copy files with the same prefix name.
+- Bug fix - Search ignores "order by".
+
 ## 1.39.3 (September 3, 2020)
 - Bug fix - missing defer close after using AQL service.
 

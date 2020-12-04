@@ -1,35 +1,18 @@
 package log
 
 import (
-	"github.com/jfrog/jfrog-cli/utils/cliutils"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
+	"github.com/jfrog/jfrog-cli-core/utils/log"
 	"github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
-	"github.com/jfrog/jfrog-client-go/utils/log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
 )
 
-func GetCliLogLevel() log.LevelType {
-	switch os.Getenv(cliutils.LogLevel) {
-	case "ERROR":
-		return log.ERROR
-	case "WARN":
-		return log.WARN
-	case "DEBUG":
-		return log.DEBUG
-	default:
-		return log.INFO
-	}
-}
-
-func SetDefaultLogger() {
-	log.SetLogger(log.NewLogger(GetCliLogLevel(), nil))
-}
-
 func CreateLogFile() (*os.File, error) {
-	logDir, err := cliutils.CreateDirInJfrogHome(cliutils.JfrogLogsDirName)
+	logDir, err := coreutils.CreateDirInJfrogHome(coreutils.JfrogLogsDirName)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +32,7 @@ func CreateLogFile() (*os.File, error) {
 // Closes the log file and resets to the default logger
 func CloseLogFile(logFile *os.File) {
 	if logFile != nil {
-		SetDefaultLogger()
+		log.SetDefaultLogger()
 		err := logFile.Close()
 		utils.CheckErrorWithMessage(err, "failed closing the log file")
 	}
