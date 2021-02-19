@@ -16,6 +16,9 @@ const (
 	BuildDownloadSpecNoBuildNumber         = "build_download_spec_no_build_number.json"
 	BuildDownloadSpecNoBuildNumberWithSort = "build_download_spec_no_build_number_with_sort.json"
 	BuildDownloadSpecNoPattern             = "build_download_spec_no_pattern.json"
+	BuildDownloadSpecExcludeArtifacts      = "build_download_spec_exclude_artifacts.json"
+	BuildDownloadSpecIncludeDeps           = "build_download_spec_include_deps.json"
+	BuildDownloadSpecDepsOnly              = "build_download_spec_deps_only.json"
 	BundleDownloadSpec                     = "bundle_download_spec.json"
 	BundleDownloadSpecNoPattern            = "bundle_download_spec_no_pattern.json"
 	CopyByBuildPatternAllSpec              = "move_copy_delete_by_build_pattern_all_spec.json"
@@ -33,6 +36,8 @@ const (
 	DelSpecExclude                         = "delete_spec_exclude.json"
 	DelSpecExclusions                      = "delete_spec_exclusions.json"
 	DistributionCreateByAql                = "dist_create_by_aql.json"
+	DistributionCreateWithMapping          = "dist_create_with_mapping.json"
+	DistributionMappingDownload            = "dist_mapping_download_spec.json"
 	DistributionRepoConfig1                = "dist_repository_config1.json"
 	DistributionRepoConfig2                = "dist_repository_config2.json"
 	DistributionRules                      = "distribution_rules.json"
@@ -40,6 +45,7 @@ const (
 	DistributionUploadSpecA                = "dist_upload_spec_a.json"
 	DistributionUploadSpecB                = "dist_upload_spec_b.json"
 	DockerRepoConfig                       = "docker_repository_config.json"
+	KanikoConfig                           = "kaniko_config.json"
 	DownloadAllRepo1TestResources          = "download_all_repo1_test_resources.json"
 	DownloadEmptyDirs                      = "download_empty_dir_spec.json"
 	DownloadModFileGo                      = "downloadmodfile_go.json"
@@ -146,6 +152,12 @@ var (
 	RtBuildName1                = "cli-tests-rt-build1"
 	RtBuildName2                = "cli-tests-rt-build2"
 	RtBuildNameWithSpecialChars = "cli-tests-rt-a$+~&^a#-build3"
+
+	// Users
+	UserName1 = "Alice"
+	Password1 = "A12356789z"
+	UserName2 = "Alice2"
+	Password2 = "1B234578y9"
 )
 
 func GetTxtUploadExpectedRepo1() []string {
@@ -165,6 +177,14 @@ func GetSimpleUploadExpectedRepo1() []string {
 		RtRepo1 + "/test_resources/c2.in",
 		RtRepo1 + "/test_resources/c1.in",
 		RtRepo1 + "/test_resources/c3.in",
+	}
+}
+
+func GetUploadLegacyPropsExpected() []string {
+	return []string{
+		RtRepo1 + "/data/a1.in",
+		RtRepo1 + "/data/a2.in",
+		RtRepo1 + "/data/a3.in",
 	}
 }
 
@@ -396,6 +416,22 @@ func GetBundleCopyExpected() []string {
 		DistRepo2 + "/data/a1.in",
 		DistRepo2 + "/data/a2.in",
 		DistRepo2 + "/data/a3.in",
+	}
+}
+
+func GetBundlePropsExpected() []string {
+	return []string{
+		DistRepo1 + "/data/b1.in",
+		DistRepo1 + "/data/b2.in",
+		DistRepo1 + "/data/b3.in",
+	}
+}
+
+func GetBundleMappingExpected() []string {
+	return []string{
+		DistRepo2 + "/target/b1.in",
+		DistRepo2 + "/target/b2.in",
+		DistRepo2 + "/target/b3.in",
 	}
 }
 
@@ -632,6 +668,29 @@ func GetBuildSimpleDownloadNoPattern() []string {
 		filepath.Join(Out, "download", "simple_by_build", "data", "a1.in"),
 		filepath.Join(Out, "download", "simple_by_build", "data", "a2.in"),
 		filepath.Join(Out, "download", "simple_by_build", "data", "a3.in"),
+	}
+}
+
+func GetDownloadByBuildOnlyDeps() []string {
+	return []string{
+		Out,
+		filepath.Join(Out, "download"),
+		filepath.Join(Out, "download", "download_build_only_dependencies"),
+		filepath.Join(Out, "download", "download_build_only_dependencies", "b1.in"),
+		filepath.Join(Out, "download", "download_build_only_dependencies", "b2.in"),
+		filepath.Join(Out, "download", "download_build_only_dependencies", "b3.in"),
+	}
+}
+
+func GetDownloadByBuildIncludeDeps() []string {
+	return []string{
+		filepath.Join(Out, "download", "download_build_with_dependencies"),
+		filepath.Join(Out, "download", "download_build_with_dependencies", "a1.in"),
+		filepath.Join(Out, "download", "download_build_with_dependencies", "a2.in"),
+		filepath.Join(Out, "download", "download_build_with_dependencies", "a3.in"),
+		filepath.Join(Out, "download", "download_build_with_dependencies", "b1.in"),
+		filepath.Join(Out, "download", "download_build_with_dependencies", "b2.in"),
+		filepath.Join(Out, "download", "download_build_with_dependencies", "b3.in"),
 	}
 }
 
@@ -1361,7 +1420,7 @@ func GetSearchResultAfterDeleteByPropsStep3() []utils.SearchResult {
 
 func GetDockerSourceManifest() []string {
 	return []string{
-		*DockerTargetRepo + "/" + DockerImageName + "/1/manifest.json",
+		*DockerLocalRepo + "/" + DockerImageName + "/1/manifest.json",
 	}
 }
 
@@ -1481,6 +1540,15 @@ func GetUploadExpectedRepo1SyncDeleteStep3() []string {
 		RtRepo1 + "/syncDir/b.zip",
 		RtRepo1 + "/syncDir/c.zip",
 		RtRepo1 + "/syncDir/d.zip",
+	}
+}
+func GetUploadExpectedRepo1SyncDeleteStep4() []string {
+	return []string{
+		RtRepo1 + "/syncDir/testdata/c/a/a.zip",
+		RtRepo1 + "/syncDir/testdata/c/a/aaa.zip",
+		RtRepo1 + "/syncDir/testdata/c/a-b/a.zip",
+		RtRepo1 + "/syncDir/testdata/c/a-b/aaa.zip",
+		RtRepo1 + "/syncDir/testdata/c/#a/a.zip",
 	}
 }
 

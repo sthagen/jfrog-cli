@@ -3,11 +3,11 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
-	coretests "github.com/jfrog/jfrog-cli-core/utils/tests"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -21,6 +21,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
+	coretests "github.com/jfrog/jfrog-cli-core/utils/tests"
 
 	"github.com/buger/jsonparser"
 	gofrogio "github.com/jfrog/gofrog/io"
@@ -37,7 +40,7 @@ import (
 	rtutils "github.com/jfrog/jfrog-client-go/artifactory/services/utils"
 	"github.com/jfrog/jfrog-client-go/artifactory/services/utils/tests/xray"
 	"github.com/jfrog/jfrog-client-go/auth"
-	"github.com/jfrog/jfrog-client-go/httpclient"
+	"github.com/jfrog/jfrog-client-go/http/httpclient"
 	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
@@ -460,6 +463,42 @@ func TestArtifactoryCopyFilesNameWithParentheses(t *testing.T) {
 	cleanArtifactoryTest()
 }
 
+func TestArtifactoryCreateUsers(t *testing.T) {
+	initArtifactoryTest(t)
+	usersCSVPath := "testdata/usersmanagement/users.csv"
+	randomUsersCSVPath, err := tests.ReplaceTemplateVariables(usersCSVPath, "")
+	assert.NoError(t, err)
+	err = artifactoryCli.Exec("users-create", "--csv="+randomUsersCSVPath)
+	// Clean up
+	defer func() {
+		err = artifactoryCli.Exec("users-delete", "--csv="+randomUsersCSVPath)
+		assert.NoError(t, err)
+	}()
+	assert.NoError(t, err)
+
+	verifyUsersExistInArtifactory(randomUsersCSVPath, t)
+}
+
+func verifyUsersExistInArtifactory(csvFilePath string, t *testing.T) {
+	// Parse input CSV
+	content, err := os.Open(csvFilePath)
+	assert.NoError(t, err)
+	csvReader := csv.NewReader(content)
+	// Ignore the header
+	csvReader.Read()
+	for {
+		// Read each record from csv
+		record, err := csvReader.Read()
+		if err == io.EOF {
+			break
+		}
+		user, password := record[0], record[1]
+		err = tests.NewJfrogCli(execMain, "jfrog rt", "--url="+artifactoryDetails.Url+" --user="+user+" --password="+password).Exec("ping")
+		assert.NoError(t, err)
+	}
+
+}
+
 func TestArtifactoryUploadFilesNameWithParenthesis(t *testing.T) {
 	initArtifactoryTest(t)
 
@@ -484,6 +523,28 @@ func TestArtifactoryDownloadFilesNameWithParenthesis(t *testing.T) {
 	assert.NoError(t, err)
 	tests.VerifyExistLocally(tests.GetFileWithParenthesesDownload(), paths, t)
 
+	cleanArtifactoryTest()
+}
+func TestArtifactoryDownloadDotAsTarget(t *testing.T) {
+	initArtifactoryTest(t)
+	assert.NoError(t, fileutils.CreateDirIfNotExist(tests.Out))
+	randFile, err := gofrogio.CreateRandFile(filepath.Join(tests.Out, "DownloadDotAsTarget"), 100000)
+	randFile.File.Close()
+	assert.NoError(t, artifactoryCli.Exec("upload", tests.Out+"/*", tests.RtRepo1+"/p-modules/", "--flat=true"))
+	assert.NoError(t, os.RemoveAll(tests.Out))
+	assert.NoError(t, fileutils.CreateDirIfNotExist(tests.Out))
+
+	wd, err := os.Getwd()
+	assert.NoError(t, err)
+	os.Chdir(tests.Out)
+
+	assert.NoError(t, artifactoryCli.Exec("download", tests.RtRepo1+"/p-modules/DownloadDotAsTarget", "."))
+	assert.NoError(t, os.Chdir(wd))
+
+	paths, err := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
+	assert.NoError(t, err)
+	tests.VerifyExistLocally([]string{tests.Out, filepath.Join(tests.Out, "p-modules"), filepath.Join(tests.Out, "p-modules", "DownloadDotAsTarget")}, paths, t)
+	os.RemoveAll(tests.Out)
 	cleanArtifactoryTest()
 }
 
@@ -698,6 +759,12 @@ func TestArtifactoryUploadAndSyncDelete(t *testing.T) {
 	searchFilePath, err = tests.CreateSpec(tests.SearchAllRepo1)
 	assert.NoError(t, err)
 	verifyExistInArtifactory(tests.GetUploadExpectedRepo1SyncDeleteStep3(), searchFilePath, t)
+	// Upload testdata/b/ and sync syncDir/testdata/b/b
+	// Noticed that testdata/c/ includes sub folders with special chars like '-' and '#'
+	artifactoryCli.Exec("upload", path.Join("testdata", "c", "*"), tests.RtRepo1+"/syncDir/", "--sync-deletes="+tests.RtRepo1+"/syncDir/", "--flat=false")
+	searchFilePath, err = tests.CreateSpec(tests.SearchAllRepo1)
+	assert.NoError(t, err)
+	verifyExistInArtifactory(tests.GetUploadExpectedRepo1SyncDeleteStep4(), searchFilePath, t)
 
 	cleanArtifactoryTest()
 }
@@ -718,16 +785,55 @@ func TestArtifactoryDownloadAndExplode(t *testing.T) {
 	artifactoryCli.Exec("upload", tests.Out+"/*", tests.RtRepo1, "--flat=true")
 	randFile.File.Close()
 	os.RemoveAll(tests.Out)
-	artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "randFile"), tests.Out+"/", "--explode=true")
-	artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=false", "--min-split=50")
-	artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "bulk.tar"), tests.Out+"/", "--explode=true")
-	artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "zipFile.zip"), tests.Out+"/", "--explode=true", "--min-split=50")
-	artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "zipFile.zip"), tests.Out+"/", "--explode=true")
+	// Download 'concurrent.tar.gz' as 'concurrent' file name and explode it.
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/concurrent", "--explode=true"))
+	// Download 'concurrent.tar.gz' and explode it.
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=true"))
+	// Download 'concurrent.tar.gz' withour explode it.
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=false"))
+	// Try to explode the archive that already been downloaded.
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=true"))
+	os.RemoveAll(tests.Out)
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "randFile"), tests.Out+"/", "--explode=true"))
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=false", "--min-split=50"))
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "bulk.tar"), tests.Out+"/", "--explode=true"))
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "zipFile.zip"), tests.Out+"/", "--explode=true", "--min-split=50"))
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "zipFile.zip"), tests.Out+"/", "--explode=true"))
 
 	paths, err := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
 	assert.NoError(t, err)
 	tests.VerifyExistLocally(tests.GetExtractedDownload(), paths, t)
 
+	cleanArtifactoryTest()
+}
+
+func TestArtifactoryDownloadAndExplodeDotAsTarget(t *testing.T) {
+	initArtifactoryTest(t)
+
+	err := fileutils.CreateDirIfNotExist(tests.Out)
+	assert.NoError(t, err)
+	randFile, err := gofrogio.CreateRandFile(filepath.Join(tests.Out, "DownloadAndExplodeDotAsTarget"), 100000)
+	assert.NoError(t, err)
+
+	err = archiver.TarGz.Make(filepath.Join(tests.Out, "concurrent.tar.gz"), []string{randFile.Name()})
+	assert.NoError(t, err)
+
+	artifactoryCli.Exec("upload", tests.Out+"/*", tests.RtRepo1, "--flat=true")
+	assert.NoError(t, artifactoryCli.Exec("upload", tests.Out+"/*", tests.RtRepo1+"/p-modules/", "--flat=true"))
+	randFile.File.Close()
+	os.RemoveAll(tests.Out)
+
+	assert.NoError(t, fileutils.CreateDirIfNotExist(tests.Out))
+	wd, err := os.Getwd()
+	assert.NoError(t, err)
+	assert.NoError(t, os.Chdir(tests.Out))
+	assert.NoError(t, artifactoryCli.Exec("download", tests.RtRepo1+"/p-modules/concurrent.tar.gz", ".", "--explode=true"))
+	assert.NoError(t, os.Chdir(wd))
+
+	paths, err := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
+	assert.NoError(t, err)
+	tests.VerifyExistLocally([]string{tests.Out, filepath.Join(tests.Out, "p-modules"), filepath.Join(tests.Out, "p-modules", "DownloadAndExplodeDotAsTarget")}, paths, t)
+	os.RemoveAll(tests.Out)
 	cleanArtifactoryTest()
 }
 
@@ -1302,6 +1408,13 @@ func createFileInHomeDir(t *testing.T, fileName string) (testFileRelPath string,
 	err := ioutil.WriteFile(testFileAbsPath, d1, 0644)
 	assert.NoError(t, err, "Couldn't create file")
 	return
+}
+
+func TestArtifactoryUploadLegacyProps(t *testing.T) {
+	initArtifactoryTest(t)
+	artifactoryCli.Exec("upload", "testdata/a/a*", tests.RtRepo1+"/data/", "--props=key1=val1;key2=val2,val3")
+	verifyExistInArtifactoryByProps(tests.GetUploadLegacyPropsExpected(), tests.RtRepo1, "key1=val1;key2=val2;key2=val3", t)
+	cleanArtifactoryTest()
 }
 
 func TestArtifactoryUploadExcludeByCli1Wildcard(t *testing.T) {
@@ -2361,6 +2474,94 @@ func TestArtifactoryDownloadByBuildNoPatternUsingSpec(t *testing.T) {
 	cleanArtifactoryTest()
 }
 
+func prepareDownloadByBuildWithDependenciesTests(t *testing.T) {
+	// Init
+	initArtifactoryTest(t)
+	buildNumber := "1337"
+	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+
+	// Upload files with buildName and buildNumber
+	specFileA, err := tests.CreateSpec(tests.SplitUploadSpecA)
+	assert.NoError(t, err)
+	specFileB, err := tests.CreateSpec(tests.SplitUploadSpecB)
+	assert.NoError(t, err)
+
+	// Add build artifacts.
+	artifactoryCli.Exec("upload", "--spec="+specFileA, "--build-name="+tests.RtBuildName1, "--build-number="+buildNumber)
+	artifactoryCli.Exec("upload", "--spec="+specFileB)
+
+	// Add build dependencies.
+	artifactoryCliNoCreds := tests.NewJfrogCli(execMain, "jfrog rt", "")
+	artifactoryCliNoCreds.Exec("bad", "--spec="+specFileB, tests.RtBuildName1, buildNumber)
+
+	// Publish build.
+	artifactoryCli.Exec("build-publish", tests.RtBuildName1, buildNumber)
+}
+
+func TestArtifactoryDownloadByBuildWithDependenciesSpecNoPattern(t *testing.T) {
+	prepareDownloadByBuildWithDependenciesTests(t)
+
+	// Download with exclude-artifacts.
+	specFile, err := tests.CreateSpec(tests.BuildDownloadSpecExcludeArtifacts)
+	assert.NoError(t, err)
+	artifactoryCli.Exec("download", "--spec="+specFile)
+	// Validate.
+	paths, _ := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
+	err = tests.ValidateListsIdentical(tests.GetBuildDownloadDoesntExist(), paths)
+	assert.NoError(t, err)
+
+	// Download deps-only.
+	specFile, err = tests.CreateSpec(tests.BuildDownloadSpecDepsOnly)
+	assert.NoError(t, err)
+	artifactoryCli.Exec("download", "--spec="+specFile)
+	// Validate.
+	paths, _ = fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
+	err = tests.ValidateListsIdentical(tests.GetDownloadByBuildOnlyDeps(), paths)
+	assert.NoError(t, err)
+
+	// Download artifacts and deps.
+	specFile, err = tests.CreateSpec(tests.BuildDownloadSpecIncludeDeps)
+	assert.NoError(t, err)
+	artifactoryCli.Exec("download", "--spec="+specFile)
+	// Validate.
+	paths, _ = fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out+string(os.PathSeparator)+"download"+string(os.PathSeparator)+"download_build_with_dependencies", false)
+	err = tests.ValidateListsIdentical(tests.GetDownloadByBuildIncludeDeps(), paths)
+	assert.NoError(t, err)
+
+	// Cleanup
+	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	cleanArtifactoryTest()
+}
+
+func TestArtifactoryDownloadByBuildWithDependencies(t *testing.T) {
+	prepareDownloadByBuildWithDependenciesTests(t)
+
+	// Download with exclude-artifacts.
+	artifactoryCli.Exec("download", tests.RtRepo1, "out/download/download_build_with_dependencies/", "--build="+tests.RtBuildName1, "--exclude-artifacts=true", "--flat=true")
+	// Validate.
+	paths, _ := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
+	err := tests.ValidateListsIdentical(tests.GetBuildDownloadDoesntExist(), paths)
+	assert.NoError(t, err)
+
+	// Download deps-only.
+	artifactoryCli.Exec("download", tests.RtRepo1, "out/download/download_build_only_dependencies/", "--build="+tests.RtBuildName1, "--exclude-artifacts=true", "--include-deps=true", "--flat=true")
+	// Validate.
+	paths, _ = fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
+	err = tests.ValidateListsIdentical(tests.GetDownloadByBuildOnlyDeps(), paths)
+	assert.NoError(t, err)
+
+	// Download artifacts and deps.
+	artifactoryCli.Exec("download", tests.RtRepo1, "out/download/download_build_with_dependencies/", "--build="+tests.RtBuildName1, "--include-deps=true", "--flat=true")
+	// Validate.
+	paths, _ = fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out+string(os.PathSeparator)+"download"+string(os.PathSeparator)+"download_build_with_dependencies", false)
+	err = tests.ValidateListsIdentical(tests.GetDownloadByBuildIncludeDeps(), paths)
+	assert.NoError(t, err)
+
+	// Cleanup
+	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	cleanArtifactoryTest()
+}
+
 // Upload a file to build A.
 // Verify that it doesn't exist in B.
 func TestArtifactoryDownloadArtifactDoesntExistInBuild(t *testing.T) {
@@ -2915,7 +3116,7 @@ func TestArtifactorySortByCreated(t *testing.T) {
 	initArtifactoryTest(t)
 
 	// Upload files separately so we can sort by created.
-	artifactoryCli.Exec("upload", "testdata/created/or", tests.RtRepo1, `--props=k1=v1`)
+	artifactoryCli.Exec("upload", "testdata/created/or", tests.RtRepo1, `--target-props=k1=v1`)
 	artifactoryCli.Exec("upload", "testdata/created/o", tests.RtRepo1)
 	artifactoryCli.Exec("upload", "testdata/created/org", tests.RtRepo1)
 
@@ -3608,7 +3809,7 @@ func preUploadBasicTestResources() {
 	uploadPath := tests.GetTestResourcesPath() + "a/(.*)"
 	targetPath := tests.RtRepo1 + "/test_resources/{1}"
 	artifactoryCli.Exec("upload", uploadPath, targetPath,
-		"--threads=10", "--regexp=true", "--props=searchMe=true", "--flat=false")
+		"--threads=10", "--regexp=true", "--target-props=searchMe=true", "--flat=false")
 }
 
 func execDeleteRepo(repoName string) {
@@ -4114,14 +4315,28 @@ func TestAccessTokenCreate(t *testing.T) {
 	defer log.SetLogger(previousLog)
 
 	// Create access token for current user, implicitly
-	err := artifactoryCli.Exec("atc")
-	assert.NoError(t, err)
+	if *tests.RtAccessToken != "" {
+		// Use Artifactory CLI with basic auth to allow running `jfrog rt atc` without arguments
+		origAccessToken := *tests.RtAccessToken
+		origUsername, origPassword := tests.SetBasicAuthFromAccessToken(t)
+		defer func() {
+			*tests.RtUser = origUsername
+			*tests.RtPassword = origPassword
+			*tests.RtAccessToken = origAccessToken
+		}()
+		*tests.RtAccessToken = ""
+		err := tests.NewJfrogCli(execMain, "jfrog rt", authenticate()).Exec("atc")
+		assert.NoError(t, err)
+	} else {
+		err := artifactoryCli.Exec("atc")
+		assert.NoError(t, err)
+	}
 
 	// Check access token
 	checkAccessToken(t, buffer)
 
 	// Create access token for current user, explicitly
-	err = artifactoryCli.Exec("atc", *tests.RtUser)
+	err := artifactoryCli.Exec("atc", *tests.RtUser)
 	assert.NoError(t, err)
 
 	// Check access token

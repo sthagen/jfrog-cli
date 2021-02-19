@@ -2,12 +2,12 @@ package tests
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/jfrog/jfrog-client-go/artifactory/buildinfo"
-	"github.com/jfrog/jfrog-client-go/artifactory/services"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +16,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jfrog/jfrog-client-go/artifactory/buildinfo"
+	"github.com/jfrog/jfrog-client-go/artifactory/services"
 
 	corelog "github.com/jfrog/jfrog-cli-core/utils/log"
 
@@ -57,7 +60,7 @@ var TestMaven *bool
 var DockerRepoDomain *string
 var DockerVirtualRepo *string
 var DockerRemoteRepo *string
-var DockerTargetRepo *string
+var DockerLocalRepo *string
 var TestNuget *bool
 var HideUnitTestLog *bool
 var TestPip *bool
@@ -89,7 +92,7 @@ func init() {
 	DockerRepoDomain = flag.String("rt.dockerRepoDomain", "", "Docker repository domain")
 	DockerVirtualRepo = flag.String("rt.dockerVirtualRepo", "", "Docker virtual repo")
 	DockerRemoteRepo = flag.String("rt.dockerRemoteRepo", "", "Docker remote repo")
-	DockerTargetRepo = flag.String("rt.dockerTargetRepo", "", "Docker local repo")
+	DockerLocalRepo = flag.String("rt.DockerLocalRepo", "", "Docker local repo")
 	TestNuget = flag.Bool("test.nuget", false, "Test Nuget")
 	HideUnitTestLog = flag.Bool("test.hideUnitTestLog", false, "Hide unit tests logs and print it in a file")
 	TestPip = flag.Bool("test.pip", false, "Test Pip")
@@ -243,20 +246,14 @@ func (cli *JfrogCli) Exec(args ...string) error {
 func (cli *JfrogCli) LegacyBuildToolExec(args ...string) error {
 	spaceSplit := " "
 	os.Args = strings.Split(cli.prefix, spaceSplit)
-	output := strings.Split(cli.prefix, spaceSplit)
-	for _, v := range args {
-		if v == "" {
-			continue
-		}
-		os.Args = append(os.Args, v)
-		output = append(output, v)
-	}
+	os.Args = append(os.Args, args...)
+
+	log.Info("[Command]", os.Args)
+
 	if cli.credentials != "" {
 		args := strings.Split(cli.credentials, spaceSplit)
 		os.Args = append(os.Args, args...)
 	}
-
-	log.Info("[Command]", strings.Join(output, " "))
 	return cli.main()
 }
 
@@ -426,35 +423,41 @@ func GetBuildNames() []string {
 // We use substitution map to set repositories and builds with timestamp.
 func getSubstitutionMap() map[string]string {
 	return map[string]string{
-		"${REPO1}":              RtRepo1,
-		"${REPO2}":              RtRepo2,
-		"${REPO_1_AND_2}":       RtRepo1And2,
-		"${VIRTUAL_REPO}":       RtVirtualRepo,
-		"${LFS_REPO}":           RtLfsRepo,
-		"${DEBIAN_REPO}":        RtDebianRepo,
-		"${DOCKER_REPO}":        DockerRepo,
-		"${MAVEN_REPO1}":        MvnRepo1,
-		"${MAVEN_REPO2}":        MvnRepo2,
-		"${MAVEN_REMOTE_REPO}":  MvnRemoteRepo,
-		"${GRADLE_REMOTE_REPO}": GradleRemoteRepo,
-		"${GRADLE_REPO}":        GradleRepo,
-		"${NPM_REPO}":           NpmRepo,
-		"${NPM_REMOTE_REPO}":    NpmRemoteRepo,
-		"${GO_REPO}":            GoRepo,
-		"${RT_SERVER_ID}":       RtServerId,
-		"${RT_URL}":             *RtUrl,
-		"${RT_API_KEY}":         *RtApiKey,
-		"${RT_USERNAME}":        *RtUser,
-		"${RT_PASSWORD}":        *RtPassword,
-		"${RT_ACCESS_TOKEN}":    *RtAccessToken,
-		"${PYPI_REMOTE_REPO}":   PypiRemoteRepo,
-		"${PYPI_VIRTUAL_REPO}":  PypiVirtualRepo,
-		"${BUILD_NAME1}":        RtBuildName1,
-		"${BUILD_NAME2}":        RtBuildName2,
-		"${BINTRAY_REPO}":       BintrayRepo,
-		"${BUNDLE_NAME}":        BundleName,
-		"${DIST_REPO1}":         DistRepo1,
-		"${DIST_REPO2}":         DistRepo2,
+		"${REPO1}":                     RtRepo1,
+		"${REPO2}":                     RtRepo2,
+		"${REPO_1_AND_2}":              RtRepo1And2,
+		"${VIRTUAL_REPO}":              RtVirtualRepo,
+		"${LFS_REPO}":                  RtLfsRepo,
+		"${DEBIAN_REPO}":               RtDebianRepo,
+		"${DOCKER_REPO}":               DockerRepo,
+		"${DOCKER_REPO_DOMAIN}":        *DockerRepoDomain,
+		"${MAVEN_REPO1}":               MvnRepo1,
+		"${MAVEN_REPO2}":               MvnRepo2,
+		"${MAVEN_REMOTE_REPO}":         MvnRemoteRepo,
+		"${GRADLE_REMOTE_REPO}":        GradleRemoteRepo,
+		"${GRADLE_REPO}":               GradleRepo,
+		"${NPM_REPO}":                  NpmRepo,
+		"${NPM_REMOTE_REPO}":           NpmRemoteRepo,
+		"${GO_REPO}":                   GoRepo,
+		"${RT_SERVER_ID}":              RtServerId,
+		"${RT_URL}":                    *RtUrl,
+		"${RT_API_KEY}":                *RtApiKey,
+		"${RT_USERNAME}":               *RtUser,
+		"${RT_PASSWORD}":               *RtPassword,
+		"${RT_CREDENTIALS_BASIC_AUTH}": base64.StdEncoding.EncodeToString([]byte(*RtUser + ":" + *RtPassword)),
+		"${RT_ACCESS_TOKEN}":           *RtAccessToken,
+		"${PYPI_REMOTE_REPO}":          PypiRemoteRepo,
+		"${PYPI_VIRTUAL_REPO}":         PypiVirtualRepo,
+		"${BUILD_NAME1}":               RtBuildName1,
+		"${BUILD_NAME2}":               RtBuildName2,
+		"${BINTRAY_REPO}":              BintrayRepo,
+		"${BUNDLE_NAME}":               BundleName,
+		"${DIST_REPO1}":                DistRepo1,
+		"${DIST_REPO2}":                DistRepo2,
+		"{USER_NAME_1}":                UserName1,
+		"{PASSWORD_1}":                 Password1,
+		"{USER_NAME_2}":                UserName2,
+		"{PASSWORD_2}":                 Password2,
 	}
 }
 
@@ -497,6 +500,13 @@ func AddTimestampToGlobalVars() {
 	RtBuildName1 += timestampSuffix
 	RtBuildName2 += timestampSuffix
 	RtBuildNameWithSpecialChars += timestampSuffix
+
+	// Users
+	UserName1 += timestampSuffix
+	UserName2 += timestampSuffix
+	rand.Seed(time.Now().Unix())
+	Password1 += timestampSuffix + strconv.FormatFloat(rand.Float64(), 'f', 2, 32)
+	Password2 += timestampSuffix + strconv.FormatFloat(rand.Float64(), 'f', 2, 32)
 }
 
 func ReplaceTemplateVariables(path, destPath string) (string, error) {

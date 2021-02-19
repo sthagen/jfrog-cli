@@ -2,12 +2,13 @@ package main
 
 import (
 	"encoding/xml"
-	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 
 	"github.com/jfrog/jfrog-cli-core/artifactory/commands/dotnet"
 	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
@@ -15,6 +16,7 @@ import (
 	"github.com/jfrog/jfrog-cli-core/utils/config"
 	"github.com/jfrog/jfrog-cli/inttestutils"
 	"github.com/jfrog/jfrog-cli/utils/tests"
+	"github.com/jfrog/jfrog-client-go/artifactory/buildinfo"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,6 +58,7 @@ func TestNugetResolve(t *testing.T) {
 
 func TestNativeNugetResolve(t *testing.T) {
 	uniqueNugetTests := []testDescriptor{
+		{"nugetargswithspaces", "packagesconfig", []string{dotnetutils.Nuget.String(), "restore", "-PackagesDirectory", "./packages dir with spaces"}, []string{"packagesconfig"}, []int{6}},
 		{"packagesconfigwithoutmodulechnage", "packagesconfig", []string{dotnetutils.Nuget.String(), "restore"}, []string{"packagesconfig"}, []int{6}},
 		{"packagesconfigwithmodulechnage", "packagesconfig", []string{dotnetutils.Nuget.String(), "restore", "--module=" + ModuleNameJFrogTest}, []string{ModuleNameJFrogTest}, []int{6}},
 		{"packagesconfigwithconfigpath", "packagesconfig", []string{dotnetutils.Nuget.String(), "restore", "./packages.config", "-SolutionDirectory", "."}, []string{"packagesconfig"}, []int{6}},
@@ -70,6 +73,7 @@ func TestNativeNugetResolve(t *testing.T) {
 
 func TestDotnetResolve(t *testing.T) {
 	uniqueDotnetTests := []testDescriptor{
+		{"dotnetargswithspaces", "multireference", []string{dotnetutils.DotnetCore.String(), "restore", "src/multireference.proj1/", "--packages", "./packages dir with spaces"}, []string{"proj1"}, []int{5}},
 		{"multireferencesingleprojectdir", "multireference", []string{dotnetutils.DotnetCore.String(), "restore", "src/multireference.proj1/"}, []string{"proj1"}, []int{5}},
 	}
 	testNativeNugetDotnetResolve(t, uniqueDotnetTests, tests.DotnetBuildName, utils.Dotnet)
@@ -89,7 +93,10 @@ func testNativeNugetDotnetResolve(t *testing.T, uniqueTests []testDescriptor, bu
 	for buildNumber, test := range testDescriptors {
 		projectPath := createNugetProject(t, test.project)
 		err := createConfigFileForTest([]string{projectPath}, tests.NugetRemoteRepo, "", t, projectType, false)
-		assert.NoError(t, err)
+		if err != nil {
+			assert.NoError(t, err)
+			return
+		}
 		t.Run(test.name, func(t *testing.T) {
 			testNugetCmd(t, projectPath, buildName, strconv.Itoa(buildNumber), test.expectedModules, test.args, test.expectedDependencies, true)
 		})
@@ -127,10 +134,14 @@ func testNugetCmd(t *testing.T, projectPath, buildName, buildNumber string, expe
 	assert.NoError(t, err)
 	args = append(args, "--build-name="+buildName, "--build-number="+buildNumber)
 	if native {
-		runNuGet(t, args...)
+		err = runNuGet(t, args...)
+		if err != nil {
+			return
+		}
 	} else {
 		assert.NoError(t, artifactoryCli.Exec(args...))
 	}
+	inttestutils.ValidateGeneratedBuildInfoModule(t, buildName, buildNumber, expectedModule, buildinfo.Nuget)
 	assert.NoError(t, artifactoryCli.Exec("bp", buildName, buildNumber))
 
 	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, buildName, buildNumber)
@@ -154,72 +165,79 @@ func testNugetCmd(t *testing.T, projectPath, buildName, buildNumber string, expe
 	inttestutils.DeleteBuild(artifactoryDetails.Url, buildName, artHttpDetails)
 }
 
-func runNuGet(t *testing.T, args ...string) {
+func runNuGet(t *testing.T, args ...string) error {
 	artifactoryNuGetCli := tests.NewJfrogCli(execMain, "jfrog rt", "")
 	err := artifactoryNuGetCli.Exec(args...)
 	assert.NoError(t, err)
+	return err
+}
+
+type testInitNewConfigDescriptor struct {
+	testName          string
+	useNugetAddSource bool
+	useNugetV2        bool
+	expectedSourceUrl string
 }
 
 func TestInitNewConfig(t *testing.T) {
-	t.Run("useNugetAddSource", func(t *testing.T) {
-		runInitNewConfig(t, true)
-	})
-	t.Run("DoNotUseNugetAddSource", func(t *testing.T) {
-		runInitNewConfig(t, false)
-	})
+	baseRtUrl := "http://some/url"
+	expectedV2Url := baseRtUrl + "/api/nuget"
+	expectedV3Url := baseRtUrl + "/api/nuget/v3"
+	testsSuites := []testInitNewConfigDescriptor{
+		{"useNugetAddSourceV2", true, true, expectedV2Url},
+		{"useNugetAddSourceV3", true, false, expectedV3Url},
+		{"doNotUseNugetAddSourceV2", false, true, expectedV2Url},
+		{"doNotUseNugetAddSourceV3", false, false, expectedV3Url},
+	}
+
+	for _, test := range testsSuites {
+		t.Run(test.testName, func(t *testing.T) {
+			runInitNewConfig(t, test, baseRtUrl)
+		})
+	}
 }
 
-func runInitNewConfig(t *testing.T, useNugetAddSource bool) {
+func runInitNewConfig(t *testing.T, testSuite testInitNewConfigDescriptor, baseRtUrl string) {
 	initNugetTest(t)
 
 	tempDirPath, err := fileutils.CreateTempDir()
 	if err != nil {
-		t.Error(err)
+		assert.NoError(t, err)
+		return
 	}
 	defer fileutils.RemoveTempDir(tempDirPath)
 
 	params := &dotnet.DotnetCommand{}
-	params.SetRtDetails(&config.ArtifactoryDetails{Url: "http://some/url", User: "user", Password: "password"}).SetUseNugetAddSource(useNugetAddSource)
+	params.SetRtDetails(&config.ArtifactoryDetails{Url: baseRtUrl, User: "user", Password: "password"}).
+		SetUseNugetAddSource(testSuite.useNugetAddSource).SetUseNugetV2(testSuite.useNugetV2)
 	// Prepare the config file with NuGet authentication
 	configFile, err := params.InitNewConfig(tempDirPath)
 	if err != nil {
-		t.Error(err)
+		assert.NoError(t, err)
+		return
 	}
 
 	content, err := ioutil.ReadFile(configFile.Name())
 	if err != nil {
-		t.Error(err)
+		assert.NoError(t, err)
+		return
 	}
 
 	nugetConfig := NugetConfig{}
 	err = xml.Unmarshal(content, &nugetConfig)
 	if err != nil {
-		t.Error("Unmarshalling failed with an error:", err.Error())
+		assert.NoError(t, err, "unmarshalling failed with an error")
+		return
 	}
 
-	if len(nugetConfig.PackageSources) != 1 {
-		t.Error("Expected one package sources, got", len(nugetConfig.PackageSources))
-	}
-
-	source := "http://some/url/api/nuget"
+	assert.Len(t, nugetConfig.PackageSources, 1)
 
 	for _, packageSource := range nugetConfig.PackageSources {
-		if packageSource.Key != dotnet.SourceName {
-			t.Error("Expected", dotnet.SourceName, ",got", packageSource.Key)
-		}
-
-		if packageSource.Value != source {
-			t.Error("Expected", source, ", got", packageSource.Value)
-		}
+		assert.Equal(t, dotnet.SourceName, packageSource.Key)
+		assert.Equal(t, testSuite.expectedSourceUrl, packageSource.Value)
 	}
-
-	if len(nugetConfig.PackageSourceCredentials) != 1 {
-		t.Error("Expected one packageSourceCredentials, got", len(nugetConfig.PackageSourceCredentials))
-	}
-
-	if len(nugetConfig.PackageSourceCredentials[0].JFrogCli) != 2 {
-		t.Error("Expected two fields in the JFrogCli credentials, got", len(nugetConfig.PackageSourceCredentials[0].JFrogCli))
-	}
+	assert.Len(t, nugetConfig.PackageSourceCredentials, 1)
+	assert.Len(t, nugetConfig.PackageSourceCredentials[0].JFrogCli, 2)
 }
 
 type NugetConfig struct {

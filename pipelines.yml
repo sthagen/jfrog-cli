@@ -6,7 +6,7 @@ commonConfiguration: &COMMON_CONFIGURATION
     - name: jfrogCliGit
 
 # Create artifactory access token and save it in './rtToken'
-createRtAccessToken: &CREATE_RT_ACCESS_TOKEN ./build/build.sh && ./jfrog rt atc $int_jfrog_rt_user --url=$int_jfrog_rt_url --user=$int_jfrog_rt_user --password=$int_jfrog_rt_password --grant-admin --expiry 1800 | jq '.access_token' -r > rtToken
+createRtAccessToken: &CREATE_RT_ACCESS_TOKEN ./build/build.sh && ./jfrog rt atc $int_jfrog_rt_user --url=$int_jfrog_rt_url --user=$int_jfrog_rt_user --password=$int_jfrog_rt_password --grant-admin --groups admin-group --expiry 1800 | jq '.access_token' -r > rtToken
 
 # Update commit status in GitHub
 updateCommitStatus: &UPDATE_COMMIT_STATUS
@@ -33,7 +33,7 @@ pipelines:
         image:
           custom:
             name: releases-docker.jfrog.io/jfrog-ecosystem-integration-env
-            tag: 1.0.0
+            tag: 1.1.0
       environmentVariables:
         readOnly:
           #GOPROXY: https://gocenter.io
@@ -126,14 +126,26 @@ pipelines:
       - name: Docker
         type: Bash
         configuration:
+          runtime:
+            type: host
           <<: *COMMON_CONFIGURATION
         execution:
           <<: *UPDATE_COMMIT_STATUS
           onExecute:
             - cd $res_jfrogCliGit_resourcePath
             - docker version
+            # Install Golang
+            - curl -LO https://get.golang.org/$(uname)/go_installer && chmod +x go_installer && SHELL=bash ./go_installer && rm go_installer
+            - export PATH=/$HOME/.go/bin:$PATH
+            - go version
+            # Install Podman
+            - echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_18.04/ /" | tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+            - curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_18.04/Release.key | apt-key add -
+            - apt update && apt -yq install podman
+            - podman version
+
             - *CREATE_RT_ACCESS_TOKEN
-            - env -i PATH=$PATH M2_HOME=$M2_HOME HOME=$HOME DOCKER_CLI_EXPERIMENTAL=enabled `which go` test -v -timeout 0 -test.docker -rt.url=$int_jfrog_rt_url -rt.accessToken=$(< rtToken) -rt.dockerRepoDomain=ecosysjfrog-docker-virtual.jfrog.io -rt.dockerVirtualRepo=docker-virtual -rt.dockerTargetRepo=docker-local -rt.dockerRemoteRepo=docker-remote
+            - env -i PATH=$PATH HOME=$HOME `which go` test -v -timeout 0 -test.docker -rt.url=$int_jfrog_rt_url -rt.accessToken=$(< rtToken) -rt.dockerRepoDomain=ecosysjfrog-docker-virtual.jfrog.io -rt.dockerVirtualRepo=docker-virtual -rt.DockerLocalRepo=docker-local -rt.dockerRemoteRepo=docker-remote
 
       - name: NuGet
         type: Bash

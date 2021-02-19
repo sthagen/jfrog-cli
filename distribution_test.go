@@ -2,15 +2,17 @@ package main
 
 import (
 	"errors"
-	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"io/ioutil"
 	"path/filepath"
 	"testing"
+
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 
 	"github.com/jfrog/jfrog-cli-core/utils/config"
 	"github.com/jfrog/jfrog-cli/inttestutils"
 	"github.com/jfrog/jfrog-cli/utils/tests"
 	"github.com/jfrog/jfrog-client-go/auth"
+	clientDistUtils "github.com/jfrog/jfrog-client-go/distribution/services/utils"
 	"github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/io/fileutils"
 	"github.com/jfrog/jfrog-client-go/utils/io/httputils"
@@ -374,8 +376,89 @@ func TestCreateBundleText(t *testing.T) {
 		releaseNotes, err := ioutil.ReadFile(releaseNotesPath)
 		assert.NoError(t, err)
 		assert.Equal(t, string(releaseNotes), distributableResponse.ReleaseNotes.Content)
-		assert.Equal(t, "markdown", distributableResponse.ReleaseNotes.Syntax)
+		assert.Equal(t, clientDistUtils.Markdown, distributableResponse.ReleaseNotes.Syntax)
 	}
+
+	cleanDistributionTest(t)
+}
+
+func TestCreateBundleProps(t *testing.T) {
+	initDistributionTest(t)
+
+	// Upload files
+	specFile, err := tests.CreateSpec(tests.DistributionUploadSpecB)
+	assert.NoError(t, err)
+	runRt(t, "u", "--spec="+specFile)
+
+	// Create and distribute release bundle with added props
+	runRb(t, "rbc", tests.BundleName, bundleVersion, tests.DistRepo1+"/data/*", "--target-props=key1=val1;key2=val2,val3", "--sign")
+	inttestutils.VerifyLocalBundleExistence(t, tests.BundleName, bundleVersion, true, distHttpDetails)
+	runRb(t, "rbd", tests.BundleName, bundleVersion, "--site=*", "--sync")
+
+	// Verify props are added to the distributes artifact
+	verifyExistInArtifactoryByProps(tests.GetBundlePropsExpected(), tests.DistRepo1+"/data/", "key1=val1;key2=val2;key2=val3", t)
+
+	cleanDistributionTest(t)
+}
+
+func TestUpdateBundleProps(t *testing.T) {
+	initDistributionTest(t)
+
+	// Upload files
+	specFile, err := tests.CreateSpec(tests.DistributionUploadSpecB)
+	assert.NoError(t, err)
+	runRt(t, "u", "--spec="+specFile)
+
+	// Create, update and distribute release bundle with added props
+	runRb(t, "rbc", tests.BundleName, bundleVersion, tests.DistRepo1+"/data/*")
+	runRb(t, "rbu", tests.BundleName, bundleVersion, tests.DistRepo1+"/data/*", "--target-props=key1=val1", "--sign")
+	inttestutils.VerifyLocalBundleExistence(t, tests.BundleName, bundleVersion, true, distHttpDetails)
+	runRb(t, "rbd", tests.BundleName, bundleVersion, "--site=*", "--sync")
+
+	// Verify props are added to the distributes artifact
+	verifyExistInArtifactoryByProps(tests.GetBundlePropsExpected(), tests.DistRepo1+"/data/", "key1=val1", t)
+
+	cleanDistributionTest(t)
+}
+
+func TestBundlePathMapping(t *testing.T) {
+	initDistributionTest(t)
+
+	// Upload files
+	specFile, err := tests.CreateSpec(tests.DistributionUploadSpecB)
+	assert.NoError(t, err)
+	runRt(t, "u", "--spec="+specFile)
+
+	// Create and distribute release bundle with path mapping from <DistRepo1>/data/ to <DistRepo2>/target/
+	runRb(t, "rbc", tests.BundleName, bundleVersion, tests.DistRepo1+"/data/(*)", "--sign", "--target="+tests.DistRepo2+"/target/{1}")
+	runRb(t, "rbd", tests.BundleName, bundleVersion, "--site=*", "--sync")
+
+	// Validate files are distributed to the target mapping
+	spec, err := tests.CreateSpec(tests.DistributionMappingDownload)
+	assert.NoError(t, err)
+	verifyExistInArtifactory(tests.GetBundleMappingExpected(), spec, t)
+
+	cleanDistributionTest(t)
+}
+
+func TestBundlePathMappingUsingSpec(t *testing.T) {
+	initDistributionTest(t)
+
+	// Upload files
+	specFile, err := tests.CreateSpec(tests.DistributionUploadSpecB)
+	assert.NoError(t, err)
+	runRt(t, "u", "--spec="+specFile)
+
+	// Create and distribute release bundle with path mapping from <DistRepo1>/data/ to <DistRepo2>/target/
+	spec, err := tests.CreateSpec(tests.DistributionCreateWithMapping)
+	assert.NoError(t, err)
+	runRb(t, "rbc", tests.BundleName, bundleVersion, "--sign", "--spec="+spec)
+	runRb(t, "rbd", tests.BundleName, bundleVersion, "--site=*", "--sync")
+
+	// Validate files are distributed to the target mapping
+	spec, err = tests.CreateSpec(tests.DistributionMappingDownload)
+	assert.NoError(t, err)
+	verifyExistInArtifactory(tests.GetBundleMappingExpected(), spec, t)
 
 	cleanDistributionTest(t)
 }

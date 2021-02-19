@@ -2,8 +2,8 @@ node("docker") {
     cleanWs()
     def architectures = [
             [pkg: 'jfrog-cli-windows-amd64', goos: 'windows', goarch: 'amd64', fileExtention: '.exe', chocoImage: 'linuturk/mono-choco'],
-            [pkg: 'jfrog-cli-linux-386', goos: 'linux', goarch: '386', fileExtention: '', debianImage: 'i386/ubuntu:19.10', debianArch: 'i386'],
-            [pkg: 'jfrog-cli-linux-amd64', goos: 'linux', goarch: 'amd64', fileExtention: '', debianImage: 'ubuntu:19.10', debianArch: 'x86_64', rpmImage: 'centos:8'],
+            [pkg: 'jfrog-cli-linux-386', goos: 'linux', goarch: '386', fileExtention: '', debianImage: 'i386/ubuntu:16.04', debianArch: 'i386'],
+            [pkg: 'jfrog-cli-linux-amd64', goos: 'linux', goarch: 'amd64', fileExtention: '', debianImage: 'ubuntu:16.04', debianArch: 'x86_64', rpmImage: 'centos:8'],
             [pkg: 'jfrog-cli-linux-arm64', goos: 'linux', goarch: 'arm64', fileExtention: ''],
             [pkg: 'jfrog-cli-linux-arm', goos: 'linux', goarch: 'arm', fileExtention: ''],
             [pkg: 'jfrog-cli-mac-386', goos: 'darwin', goarch: 'amd64', fileExtention: ''],
@@ -68,7 +68,7 @@ node("docker") {
             }
         } else if ("$EXECUTION_MODE".toString().equals("Build CLI")) {
             downloadToolsCert()
-            print "Uploading version $version to Bintray"
+            print "Uploading version $version to Bintray and to releases.jfrog.io"
             uploadCli(architectures)
         }
     }
@@ -153,11 +153,20 @@ def uploadToBintray(pkg, fileName) {
     }
 }
 
+def uploadToJfrogReleases(pkg, fileName) {
+    withCredentials([string(credentialsId: 'jfrog-cli-automation', variable: 'JFROG_CLI_AUTOMATION_ACCESS_TOKEN')]) {
+        sh """#!/bin/bash
+                builder/jfrog rt u $jfrogCliRepoDir/$fileName jfrog-cli/v1/$version/$pkg/ --url https://releases.jfrog.io/artifactory/ --access-token=$JFROG_CLI_AUTOMATION_ACCESS_TOKEN
+        """
+    }
+}
+
 def build(goos, goarch, pkg, fileName) {
     dir("${jfrogCliRepoDir}") {
         env.GOOS="$goos"
         env.GOARCH="$goarch"
         sh "build/build.sh $fileName"
+        sh "chmod +x $fileName"
 
         if (goos == 'windows') {
             dir("${cliWorkspace}/certs-dir") {
@@ -182,6 +191,7 @@ def buildAndUpload(goos, goarch, pkg, fileExtension) {
 
     build(goos, goarch, pkg, fileName)
     uploadToBintray(pkg, fileName)
+    uploadToJfrogReleases(pkg, fileName)
     sh "rm $jfrogCliRepoDir/$fileName"
 }
 

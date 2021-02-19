@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -12,11 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
+
 	"github.com/buger/jsonparser"
 	"github.com/jfrog/jfrog-cli-core/artifactory/spec"
 	"github.com/jfrog/jfrog-cli-core/utils/config"
 	"github.com/jfrog/jfrog-cli/utils/tests"
-	"github.com/jfrog/jfrog-client-go/httpclient"
+	"github.com/jfrog/jfrog-client-go/distribution/services/utils"
+	"github.com/jfrog/jfrog-client-go/http/httpclient"
 	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"github.com/jfrog/jfrog-client-go/utils/io/httputils"
 	"github.com/jfrog/jfrog-client-go/utils/log"
@@ -50,16 +52,10 @@ const (
 // GET api/v1/release_bundle/:name/:version
 // Retreive the status of a release bundle before distribution.
 type distributableResponse struct {
-	Name         string                          `json:"name,omitempty"`
-	Version      string                          `json:"version,omitempty"`
-	State        distributableDistributionStatus `json:"state,omitempty"`
-	Description  string                          `json:"description,omitempty"`
-	ReleaseNotes releaseNotesResponse            `json:"release_notes,omitempty"`
-}
-
-type releaseNotesResponse struct {
-	Content string `json:"content,omitempty"`
-	Syntax  string `json:"syntax,omitempty"`
+	utils.ReleaseBundleBody
+	Name    string                          `json:"name,omitempty"`
+	Version string                          `json:"version,omitempty"`
+	State   distributableDistributionStatus `json:"state,omitempty"`
 }
 
 // Get api/v1/release_bundle/:name/:version/distribution

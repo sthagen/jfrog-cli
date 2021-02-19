@@ -153,18 +153,20 @@ go test -v github.com/jfrog/jfrog-cli -test.gradle [flags]
 
 #### Docker tests
 In addition to [general optional flags](#Usage) you *must* use the following docker flags.
+##### Requirements
+* On Linux machines, [Podman](https://podman.io/) tests will be running, so make sure it's available in the local path.
 
 | Flag | Description |
 | --- | --- |
 | `-rt.dockerRepoDomain` | Artifactory Docker registry domain. |
 | `-rt.dockerVirtualRepo` | Artifactory Docker virtual repository name. |
 | `-rt.dockerRemoteRepo` | Artifactory Docker remote repository name. |
-| `-rt.dockerTargetRepo` | Artifactory Docker local repository name. |
+| `-rt.DockerLocalRepo` | Artifactory Docker local repository name. |
 
 ##### Examples
 To run docker tests execute the following command (fill out the missing parameters as described below).
 ````
-go test -v github.com/jfrog/jfrog-cli -test.docker -rt.dockerRepoDomain=DOCKER_DOMAIN -rt.dockerTargetRepo=DOCKER_TARGET_REPO [flags]
+go test -v github.com/jfrog/jfrog-cli -test.docker -rt.dockerRepoDomain=DOCKER_DOMAIN -rt.DockerLocalRepo=DOCKER_LOCAL_REPO [flags]
 ````
 
 #### Go commands tests
