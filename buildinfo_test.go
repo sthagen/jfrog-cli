@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jfrog/jfrog-client-go/utils/log"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/generic"
+	"github.com/jfrog/jfrog-cli-core/artifactory/spec"
 	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
 	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	coretests "github.com/jfrog/jfrog-cli-core/utils/tests"
@@ -30,7 +33,7 @@ const ModuleNameJFrogTest = "jfrog-test"
 func TestBuildAddDependenciesFromHomeDir(t *testing.T) {
 	initArtifactoryTest(t)
 	// Clean old build tests if exists
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 
 	fileName := "cliTestFile.txt"
 	testFileRelPath, testFileAbs := createFileInHomeDir(t, fileName)
@@ -60,7 +63,7 @@ func TestBuildPromote(t *testing.T) {
 
 	// Promote build to Repo1 using build name and build number as args.
 	assert.NoError(t, artifactoryCli.Exec("build-promote", tests.RtBuildName1, buildNumberA, tests.RtRepo1, fmt.Sprintf("--props=%s=%s;%s=%s", key1, value1, key2, value2)))
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.RtBuildName1, buildNumberA)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.RtBuildName1, buildNumberA)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -81,7 +84,7 @@ func TestBuildPromote(t *testing.T) {
 	defer os.Unsetenv(coreutils.BuildNumber)
 	assert.NoError(t, artifactoryCli.Exec("build-promote", tests.RtRepo2, fmt.Sprintf("--props=%s=%s;%s=%s", key1, value1, key2, value2)))
 
-	publishedBuildInfo, found, err = tests.GetBuildInfo(artifactoryDetails, tests.RtBuildName1, buildNumberA)
+	publishedBuildInfo, found, err = tests.GetBuildInfo(serverDetails, tests.RtBuildName1, buildNumberA)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -96,11 +99,11 @@ func TestBuildPromote(t *testing.T) {
 
 	assert.Equal(t, len(buildInfo.Modules[0].Artifacts), len(resultItems), "Incorrect number of artifacts were uploaded")
 
-	propsMap := map[string]string{
-		"build.name":   buildInfo.Name,
-		"build.number": buildInfo.Number,
-		key1:           value1,
-		key2:           value2,
+	propsMap := map[string][]string{
+		"build.name":   {buildInfo.Name},
+		"build.number": {buildInfo.Number},
+		key1:           strings.Split(value1, ","),
+		key2:           {value2},
 	}
 
 	validateArtifactsProperties(resultItems, t, propsMap)
@@ -112,7 +115,6 @@ func getResultItemsFromArtifactory(specName string, t *testing.T) []rtutils.Resu
 	searchGoSpecFile, err := tests.CreateSpec(specName)
 	assert.NoError(t, err)
 	spec, flags := getSpecAndCommonFlags(searchGoSpecFile)
-	flags.SetArtifactoryDetails(artAuth)
 	var resultItems []rtutils.ResultItem
 	for i := 0; i < len(spec.Files); i++ {
 		searchParams, err := utils.GetSearchParams(spec.Get(i))
@@ -129,16 +131,18 @@ func getResultItemsFromArtifactory(specName string, t *testing.T) []rtutils.Resu
 }
 
 // This function validates the properties on the provided artifacts. Every property within the provided map should be attached to the artifact.
-func validateArtifactsProperties(resultItems []rtutils.ResultItem, t *testing.T, propsMap map[string]string) {
+func validateArtifactsProperties(resultItems []rtutils.ResultItem, t *testing.T, propsMap map[string][]string) {
 	for _, item := range resultItems {
 		properties := item.Properties
 		assert.GreaterOrEqual(t, len(properties), 1, "Failed finding properties on item:", item.GetItemRelativePath())
 		propertiesMap := tests.ConvertSliceToMap(properties)
 
-		for key, value := range propsMap {
-			valueFromArtifact, contains := propertiesMap[key]
+		for key, values := range propsMap {
+			valuesFromArtifact, contains := propertiesMap[key]
 			assert.True(t, contains, "Failed finding %s property on %s", key, item.Name)
-			assert.Equalf(t, value, valueFromArtifact, "Wrong value for %s property on %s.", key, item.Name)
+			for _, value := range values {
+				assert.Contains(t, valuesFromArtifact, value, "Wrong value for %s property on %s", key, item.Name)
+			}
 		}
 	}
 }
@@ -146,8 +150,7 @@ func validateArtifactsProperties(resultItems []rtutils.ResultItem, t *testing.T,
 func TestBuildAddDependenciesDryRun(t *testing.T) {
 	initArtifactoryTest(t)
 	// Clean old build tests if exists
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	err := utils.RemoveBuildDir(tests.RtBuildName1, "1")
+	err := utils.RemoveBuildDir(tests.RtBuildName1, "1", "")
 	assert.NoError(t, err)
 
 	wd, err := os.Getwd()
@@ -158,16 +161,50 @@ func TestBuildAddDependenciesDryRun(t *testing.T) {
 	assert.NoError(t, err)
 
 	noCredsCli := tests.NewJfrogCli(execMain, "jfrog rt", "")
-	// Execute the bad command
+	// Execute the bad command on the local file system
 	noCredsCli.Exec("bad", tests.RtBuildName1, "1", "a/*", "--dry-run=true")
-	buildDir, err := utils.GetBuildDir(tests.RtBuildName1, "1")
+	buildDir, err := utils.GetBuildDir(tests.RtBuildName1, "1", "")
 	assert.NoError(t, err)
 
 	files, _ := ioutil.ReadDir(buildDir)
 	assert.Zero(t, len(files), "'rt bad' command with dry-run failed. The dry-run option has no effect.")
 
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	// Execute the bad command on remote Artifactory
+	artifactoryCli.Exec("upload", "a/*", tests.RtRepo1)
+	noCredsCli.Exec("bad", tests.RtBuildName1, "2", tests.RtRepo1+"/*", "--from-rt", "--dry-run=true")
+	buildDir, err = utils.GetBuildDir(tests.RtBuildName1, "2", "")
+	assert.NoError(t, err)
+
+	files, _ = ioutil.ReadDir(buildDir)
+	assert.Zero(t, len(files), "'rt bad' command on remote with dry-run failed. The dry-run option has no effect.")
+
 	os.Chdir(wd)
+	cleanArtifactoryTest()
+}
+
+func TestBuildPublishDetailedSummary(t *testing.T) {
+	initArtifactoryTest(t)
+	buildNumber := "11"
+
+	// Clean old build tests if exists.
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	assert.NoError(t, utils.RemoveBuildDir(tests.RtBuildName1, buildNumber, ""))
+
+	// Upload files with build name & number.
+	specFile, err := tests.CreateSpec(tests.UploadFlatNonRecursive)
+	assert.NoError(t, err)
+	assert.NoError(t, artifactoryCli.Exec("upload", "--spec="+specFile, "--build-name="+tests.RtBuildName1, "--build-number="+buildNumber))
+	// Verify build dir is not empty
+	assert.NotEmpty(t, getFilesFromBuildDir(t, tests.RtBuildName1, buildNumber, ""))
+
+	buffer, previousLog := tests.RedirectLogOutputToBuffer()
+	// Restore previous logger when the function returns
+	defer log.SetLogger(previousLog)
+	// Execute the bp command with --detailed-summary.
+	assert.NoError(t, artifactoryCli.Exec("bp", tests.RtBuildName1, buildNumber, "--detailed-summary=true"))
+	tests.VerifySha256DetailedSummaryFromBuffer(t, buffer, previousLog)
+
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -175,22 +212,22 @@ func TestBuildPublishDryRun(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumber := "11"
 	// Clean old build tests if exists.
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	assert.NoError(t, utils.RemoveBuildDir(tests.RtBuildName1, buildNumber))
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	assert.NoError(t, utils.RemoveBuildDir(tests.RtBuildName1, buildNumber, ""))
 
 	// Upload files with build name & number.
 	specFile, err := tests.CreateSpec(tests.UploadFlatRecursive)
 	assert.NoError(t, err)
 	assert.NoError(t, artifactoryCli.Exec("upload", "--spec="+specFile, "--build-name="+tests.RtBuildName1, "--build-number="+buildNumber))
 	// Verify build dir is not empty
-	assert.NotEmpty(t, getFilesFromBuildDir(t, tests.RtBuildName1, buildNumber))
+	assert.NotEmpty(t, getFilesFromBuildDir(t, tests.RtBuildName1, buildNumber, ""))
 
 	// Execute the bp command with dry run.
 	assert.NoError(t, artifactoryCli.Exec("bp", tests.RtBuildName1, buildNumber, "--dry-run=true"))
 	// Verify build dir is not empty.
-	assert.NotEmpty(t, getFilesFromBuildDir(t, tests.RtBuildName1, buildNumber))
+	assert.NotEmpty(t, getFilesFromBuildDir(t, tests.RtBuildName1, buildNumber, ""))
 	// Verify build was not published.
-	_, found, err := tests.GetBuildInfo(artifactoryDetails, tests.RtBuildName1, buildNumber)
+	_, found, err := tests.GetBuildInfo(serverDetails, tests.RtBuildName1, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -203,9 +240,9 @@ func TestBuildPublishDryRun(t *testing.T) {
 	// Execute the bp command without dry run
 	assert.NoError(t, artifactoryCli.Exec("bp", tests.RtBuildName1, buildNumber))
 	// Verify build dir is empty
-	assert.Empty(t, getFilesFromBuildDir(t, tests.RtBuildName1, buildNumber))
+	assert.Empty(t, getFilesFromBuildDir(t, tests.RtBuildName1, buildNumber, ""))
 	// Verify build was published
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.RtBuildName1, buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.RtBuildName1, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -215,14 +252,14 @@ func TestBuildPublishDryRun(t *testing.T) {
 		return
 	}
 	buildInfo := publishedBuildInfo.BuildInfo
-	validateBuildInfo(buildInfo, t, 0, 9, tests.RtBuildName1)
+	validateBuildInfo(buildInfo, t, 0, 9, tests.RtBuildName1, buildinfo.Generic)
 
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
-func getFilesFromBuildDir(t *testing.T, buildName, buildNumber string) []os.FileInfo {
-	buildDir, err := utils.GetBuildDir(buildName, buildNumber)
+func getFilesFromBuildDir(t *testing.T, buildName, buildNumber, projectKey string) []os.FileInfo {
+	buildDir, err := utils.GetBuildDir(buildName, buildNumber, "")
 	assert.NoError(t, err)
 
 	files, err := ioutil.ReadDir(buildDir)
@@ -236,8 +273,8 @@ func TestBuildAppend(t *testing.T) {
 	buildNumber2 := "13"
 
 	// Clean old builds tests if exists
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName2, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
 
 	// Publish build RtBuildName1/buildNumber1
 	err := artifactoryCli.WithoutCredentials().Exec("bce", tests.RtBuildName1, buildNumber1)
@@ -250,7 +287,7 @@ func TestBuildAppend(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Assert RtBuildName2/buildNumber2 is appended to RtBuildName1/buildNumber1 locally
-	partials, err := utils.ReadPartialBuildInfoFiles(tests.RtBuildName2, buildNumber2)
+	partials, err := utils.ReadPartialBuildInfoFiles(tests.RtBuildName2, buildNumber2, "")
 	assert.NoError(t, err)
 	assert.Len(t, partials, 1)
 	assert.Equal(t, tests.RtBuildName1+"/"+buildNumber1, partials[0].ModuleId)
@@ -265,34 +302,139 @@ func TestBuildAppend(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Check published build info
-	buildInfo, _, err := tests.GetBuildInfo(artifactoryDetails, tests.RtBuildName2, buildNumber2)
+	buildInfo, _, err := tests.GetBuildInfo(serverDetails, tests.RtBuildName2, buildNumber2)
 	assert.NoError(t, err)
 	assert.NotNil(t, buildInfo)
 	assert.Len(t, buildInfo.BuildInfo.Modules, 1)
 	module := buildInfo.BuildInfo.Modules[0]
 	assert.Equal(t, tests.RtBuildName1+"/"+buildNumber1, module.Id)
+	assert.Equal(t, buildinfo.Build, module.Type)
 
 	// Clean builds
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName2, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
+	cleanArtifactoryTest()
+}
+
+func TestDownloadAppendedBuild(t *testing.T) {
+	initArtifactoryTest(t)
+	buildNumber1 := "12"
+	buildNumber2 := "13"
+
+	// Clean old builds tests if exists
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
+
+	// Add files to RtBuildName1/buildNumber1.
+	specFile, err := tests.CreateSpec(tests.SplitUploadSpecA)
+	assert.NoError(t, err)
+	assert.NoError(t, artifactoryCli.Exec("upload", "--spec="+specFile, "--build-name="+tests.RtBuildName1, "--build-number="+buildNumber1))
+
+	// Publish build RtBuildName1/buildNumber1
+	err = artifactoryCli.Exec("bp", tests.RtBuildName1, buildNumber1)
+	assert.NoError(t, err)
+
+	// Create a build RtBuildName2/buildNumber2 and append RtBuildName1/buildNumber1 to the build
+	err = artifactoryCli.Exec("ba", tests.RtBuildName2, buildNumber2, tests.RtBuildName1, buildNumber1)
+	assert.NoError(t, err)
+
+	// Publish build RtBuildName2/buildNumber2
+	err = artifactoryCli.Exec("bp", tests.RtBuildName2, buildNumber2)
+	assert.NoError(t, err)
+
+	// Download
+	err = artifactoryCli.Exec("dl", tests.RtRepo1, filepath.Join(tests.Out, "download", "simple_by_build")+fileutils.GetFileSeparator(), "--build="+tests.RtBuildName2+"/"+buildNumber2)
+	assert.NoError(t, err)
+
+	// Validate files from
+	paths, _ := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
+	err = tests.ValidateListsIdentical(tests.GetBuildSimpleDownloadNoPattern(), paths)
+	assert.NoError(t, err)
+
+	// Clean builds
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
+	cleanArtifactoryTest()
+}
+
+func TestSearchAppendedBuildNoPattern(t *testing.T) {
+	initArtifactoryTest(t)
+	buildNumber1 := "12"
+	buildNumber2 := "13"
+
+	// Clean old builds tests if exists
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
+
+	// Add files to RtBuildName1/buildNumber1.
+	specFile, err := tests.CreateSpec(tests.SplitUploadSpecA)
+	assert.NoError(t, err)
+	assert.NoError(t, artifactoryCli.Exec("upload", "--spec="+specFile, "--build-name="+tests.RtBuildName1, "--build-number="+buildNumber1))
+
+	// Publish build RtBuildName1/buildNumber1
+	err = artifactoryCli.Exec("bp", tests.RtBuildName1, buildNumber1)
+	assert.NoError(t, err)
+
+	// Create a build RtBuildName2/buildNumber2 and append RtBuildName1/buildNumber1 to the build
+	err = artifactoryCli.Exec("ba", tests.RtBuildName2, buildNumber2, tests.RtBuildName1, buildNumber1)
+	assert.NoError(t, err)
+
+	// Publish build RtBuildName2/buildNumber2
+	err = artifactoryCli.Exec("bp", tests.RtBuildName2, buildNumber2)
+	assert.NoError(t, err)
+
+	// Run search on RtBuildName2/buildNumber2
+	searchCmd := generic.NewSearchCommand()
+	searchCmd.SetServerDetails(serverDetails)
+	searchCmd.SetSpec(spec.NewBuilder().Build(tests.RtBuildName2 + "/" + buildNumber2).BuildSpec())
+	reader, err := searchCmd.Search()
+	assert.NoError(t, err)
+
+	// Make sure artifacts from RtBuildName1/buildNumber1 are matched by searching on RtBuildName2/buildNumber2
+	length, err := reader.Length()
+	assert.NoError(t, err)
+	assert.Equal(t, 3, length)
+	for resultItem := new(utils.SearchResult); reader.NextRecord(resultItem) == nil; resultItem = new(utils.SearchResult) {
+		assert.Contains(t, tests.GetSearchAppendedBuildNoPatternExpected(), resultItem.Path)
+		assert.Equal(t, []string{tests.RtBuildName1}, resultItem.Props["build.name"])
+		assert.Equal(t, []string{buildNumber1}, resultItem.Props["build.number"])
+	}
+
+	// Clean builds
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func TestBuildAddDependencies(t *testing.T) {
 	initArtifactoryTest(t)
+	createJfrogHomeConfig(t, true)
 	// Clean old build tests if exists
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	buildAddDepsRemoteSpec, err := tests.CreateSpec(tests.BuildAddDepsRemoteSpec)
+	assert.NoError(t, err)
+	buildAddDepsDoubleRemoteSpec, err := tests.CreateSpec(tests.BuildAddDepsDoubleRemoteSpec)
+	assert.NoError(t, err)
+	artifactoryCli.Exec("upload", "testdata/a/*", tests.RtRepo1, "--flat=false")
 	allFiles := []string{"a1.in", "a2.in", "a3.in", "b1.in", "b2.in", "b3.in", "c1.in", "c2.in", "c3.in"}
 	var badTests = []buildAddDepsBuildInfoTestParams{
+		// Collect the dependencies from the local file system (the --from-rt option is not used).
 		{description: "'rt bad' simple cli", commandArgs: []string{"testdata/a/*"}, expectedDependencies: allFiles},
 		{description: "'rt bad' single file", commandArgs: []string{"testdata/a/a1.in"}, expectedDependencies: []string{"a1.in"}},
 		{description: "'rt bad' none recursive", commandArgs: []string{"testdata/a/*", "--recursive=false"}, expectedDependencies: []string{"a1.in", "a2.in", "a3.in"}},
 		{description: "'rt bad' special chars recursive", commandArgs: []string{getSpecialCharFilePath()}, expectedDependencies: []string{"a1.in"}},
-		{description: "'rt bad' exclude command line wildcards", commandArgs: []string{"testdata/a/*", "--exclude-patterns=*a2*;*a3.in"}, expectedDependencies: []string{"a1.in", "b1.in", "b2.in", "b3.in", "c1.in", "c2.in", "c3.in"}},
+		{description: "'rt bad' exclude command line wildcards", commandArgs: []string{"testdata/a/*", "--exclusions=*a2*;*a3.in"}, expectedDependencies: []string{"a1.in", "b1.in", "b2.in", "b3.in", "c1.in", "c2.in", "c3.in"}},
 		{description: "'rt bad' spec", commandArgs: []string{"--spec=" + tests.GetFilePathForArtifactory(tests.BuildAddDepsSpec)}, expectedDependencies: allFiles},
 		{description: "'rt bad' two specFiles", commandArgs: []string{"--spec=" + tests.GetFilePathForArtifactory(tests.BuildAddDepsDoubleSpec)}, expectedDependencies: []string{"a1.in", "a2.in", "a3.in", "b1.in", "b2.in", "b3.in"}},
-		{description: "'rt bad' exclude command line regexp", commandArgs: []string{"testdata/a/a(.*)", "--exclude-patterns=(.*)a2.*;.*a3.in", "--regexp=true"}, expectedDependencies: []string{"a1.in"}},
+		{description: "'rt bad' exclude command line regexp", commandArgs: []string{"testdata/a/a(.*)", "--exclusions=(.*)a2.*;.*a3.in", "--regexp=true"}, expectedDependencies: []string{"a1.in"}},
+
+		// Collect the dependencies from Artifactory using the --from-rt option.
+		{description: "'rt bad' simple cli", commandArgs: []string{tests.RtRepo1 + "/testdata/a/*", "--from-rt"}, expectedDependencies: allFiles},
+		{description: "'rt bad' single file", commandArgs: []string{tests.RtRepo1 + "/testdata/a/a1.in", "--from-rt"}, expectedDependencies: []string{"a1.in"}},
+		{description: "'rt bad' none recursive", commandArgs: []string{tests.RtRepo1 + "/testdata/a/*", "--recursive=false", "--from-rt"}, expectedDependencies: []string{"a1.in", "a2.in", "a3.in"}},
+		{description: "'rt bad' exclude command line wildcards", commandArgs: []string{tests.RtRepo1 + "/testdata/a/*", "--exclusions=*a2*;*a3.in", "--from-rt"}, expectedDependencies: []string{"a1.in", "b1.in", "b2.in", "b3.in", "c1.in", "c2.in", "c3.in"}},
+		{description: "'rt bad' spec", commandArgs: []string{"--spec=" + buildAddDepsRemoteSpec, "--from-rt"}, expectedDependencies: allFiles},
+		{description: "'rt bad' two specFiles", commandArgs: []string{"--spec=" + buildAddDepsDoubleRemoteSpec, "--from-rt"}, expectedDependencies: []string{"a1.in", "a2.in", "a3.in", "b1.in", "b2.in", "b3.in"}},
 	}
 
 	// Tests compatibility to file paths with windows separators.
@@ -310,13 +452,13 @@ func TestBuildAddDependencies(t *testing.T) {
 
 		collectDepsAndPublishBuild(badTest, true, t)
 		validateBuildAddDepsBuildInfo(t, badTest)
-		utils.RemoveBuildDir(badTest.buildName, badTest.buildNumber)
+		utils.RemoveBuildDir(badTest.buildName, badTest.buildNumber, "")
 
 		collectDepsAndPublishBuild(badTest, false, t)
 		validateBuildAddDepsBuildInfo(t, badTest)
-		utils.RemoveBuildDir(badTest.buildName, badTest.buildNumber)
+		utils.RemoveBuildDir(badTest.buildName, badTest.buildNumber, "")
 	}
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -332,7 +474,7 @@ func TestArtifactoryPublishAndGetBuildInfoSpecialChars(t *testing.T) {
 
 func testArtifactoryPublishWithoutBuildUrl(t *testing.T, buildName, buildNumber string) {
 	initArtifactoryTest(t)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, buildName, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, buildName, artHttpDetails)
 
 	bi, err := uploadFilesAndGetBuildInfo(t, buildName, buildNumber, "")
 	if err != nil {
@@ -345,7 +487,7 @@ func testArtifactoryPublishWithoutBuildUrl(t *testing.T, buildName, buildNumber 
 	assert.Empty(t, bi.BuildUrl)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, buildName, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, buildName, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -356,7 +498,7 @@ func TestArtifactoryPublishBuildInfoBuildUrl(t *testing.T) {
 	buildUrl := "http://example.ci.com"
 	os.Setenv(cliutils.BuildUrl, "http://override-me.ci.com")
 	defer os.Unsetenv(cliutils.BuildUrl)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 
 	bi, err := uploadFilesAndGetBuildInfo(t, tests.RtBuildName1, buildNumber, buildUrl)
 	if err != nil {
@@ -366,7 +508,7 @@ func TestArtifactoryPublishBuildInfoBuildUrl(t *testing.T) {
 	assert.Equal(t, buildUrl, bi.BuildUrl)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -375,7 +517,7 @@ func TestArtifactoryPublishBuildInfoBuildUrlFromEnv(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumber := "11"
 	buildUrl := "http://example-env.ci.com"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	os.Setenv(cliutils.BuildUrl, buildUrl)
 	defer os.Unsetenv(cliutils.BuildUrl)
 
@@ -388,7 +530,7 @@ func TestArtifactoryPublishBuildInfoBuildUrlFromEnv(t *testing.T) {
 	assert.Equal(t, buildUrl, bi.BuildUrl)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -396,9 +538,9 @@ func TestGetNonExistingBuildInfo(t *testing.T) {
 	initArtifactoryTest(t)
 	buildName := "jfrog-cli-rt-tests-non-existing-build-info"
 	buildNumber := "10"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, buildName, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, buildName, artHttpDetails)
 
-	_, found, err := tests.GetBuildInfo(artifactoryDetails, buildName, buildNumber)
+	_, found, err := tests.GetBuildInfo(serverDetails, buildName, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -406,14 +548,14 @@ func TestGetNonExistingBuildInfo(t *testing.T) {
 	assert.False(t, found, "build info was expected not to be found")
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, buildName, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, buildName, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func TestArtifactoryCleanBuildInfo(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumber := "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 
 	// Upload files with buildName and buildNumber
 	specFile, err := tests.CreateSpec(tests.SplitUploadSpecA)
@@ -438,7 +580,7 @@ func TestArtifactoryCleanBuildInfo(t *testing.T) {
 	tests.VerifyExistLocally(tests.GetCleanBuild(), paths, t)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -453,7 +595,7 @@ func TestArtifactoryBuildCollectEnv(t *testing.T) {
 
 	// Publish build info
 	assert.NoError(t, artifactoryCli.Exec("bp", tests.RtBuildName1, buildNumber, "--env-exclude=*password*;*psw*;*secret*;*key*;*token*;DONT_COLLECT"))
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.RtBuildName1, buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.RtBuildName1, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -478,7 +620,7 @@ func TestArtifactoryBuildCollectEnv(t *testing.T) {
 	assert.Contains(t, buildInfo.Properties, "buildInfo.env.COLLECT")
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -522,12 +664,29 @@ func testBuildAddGit(t *testing.T, useEnvBuildNameAndNumber bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Check partials VCS info
+	partials, err := utils.ReadPartialBuildInfoFiles(tests.RtBuildName1, buildNumber, "")
+	assert.NoError(t, err)
+	expectedVcsUrl := "https://github.com/jfrog/jfrog-cli-go.git"
+	expectedVcsRevision := "b033a0e508bdb52eee25654c9e12db33ff01b8ff"
+	expectedVcsBranch := "master"
+	expectedVcsMessage := "TEST-4 - Adding text to file2.txt"
+	buildInfoVcsUrl := partials[0].VcsList[0].Url
+	buildInfoVcsRevision := partials[0].VcsList[0].Revision
+	buildInfoVcsBranch := partials[0].VcsList[0].Branch
+	buildInfoVcsMessage := partials[0].VcsList[0].Message
+	assert.Equal(t, expectedVcsUrl, buildInfoVcsUrl, "Wrong url")
+	assert.Equal(t, expectedVcsRevision, buildInfoVcsRevision, "Wrong revision")
+	assert.Equal(t, expectedVcsBranch, buildInfoVcsBranch, "Wrong branch")
+	assert.Equal(t, expectedVcsMessage, buildInfoVcsMessage, "Wrong Message")
+
 	// Clear previous build if exists and publish build-info.
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	assert.NoError(t, artifactoryCli.Exec("build-publish", tests.RtBuildName1, buildNumber))
 
 	// Fetch the published build-info for validation.
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.RtBuildName1, buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.RtBuildName1, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -540,10 +699,8 @@ func testBuildAddGit(t *testing.T, useEnvBuildNameAndNumber bool) {
 	require.NotNil(t, buildInfo.VcsList, "Received build-info with empty VCS.")
 
 	// Validate results
-	expectedVcsUrl := "https://github.com/jfrog/jfrog-cli-go.git"
-	expectedVcsRevision := "b033a0e508bdb52eee25654c9e12db33ff01b8ff"
-	buildInfoVcsUrl := buildInfo.VcsList[0].Url
-	buildInfoVcsRevision := buildInfo.VcsList[0].Revision
+	buildInfoVcsUrl = buildInfo.VcsList[0].Url
+	buildInfoVcsRevision = buildInfo.VcsList[0].Revision
 	assert.Equal(t, expectedVcsRevision, buildInfoVcsRevision, "Wrong revision")
 	assert.Equal(t, expectedVcsUrl, buildInfoVcsUrl, "Wrong url")
 	assert.False(t, buildInfo.Issues == nil || len(buildInfo.Issues.AffectedIssues) != 4,
@@ -553,7 +710,7 @@ func testBuildAddGit(t *testing.T, useEnvBuildNameAndNumber bool) {
 
 func cleanBuildAddGitTest(t *testing.T, baseDir, originalFolder, oldHomeDir, dotGitPath string) {
 	coretests.RenamePath(dotGitPath, filepath.Join(baseDir, originalFolder), t)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	os.Setenv(coreutils.HomeDir, oldHomeDir)
 	cleanArtifactoryTest()
 }
@@ -568,16 +725,24 @@ func TestReadGitConfig(t *testing.T) {
 	assert.NoError(t, err, "Failed to get current dir.")
 	gitExecutor := tests.GitExecutor(workingDir)
 	revision, _, err := gitExecutor.GetRevision()
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, revision, gitManager.GetRevision(), "Wrong revision")
 
 	url, _, err := gitExecutor.GetUrl()
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	if !strings.HasSuffix(url, ".git") {
 		url += ".git"
 	}
-
 	assert.Equal(t, url, gitManager.GetUrl(), "Wrong url")
+
+	branch, _, err := gitExecutor.GetBranch()
+	assert.NoError(t, err)
+	assert.Equal(t, branch, gitManager.GetBranch(), "Wrong branch")
+
+	message, _, err := gitExecutor.GetMessage(revision)
+	assert.NoError(t, err)
+	assert.Equal(t, message, gitManager.GetMessage(), "Wrong message")
+
 	cleanArtifactoryTest()
 }
 
@@ -600,7 +765,7 @@ func uploadFilesAndGetBuildInfo(t *testing.T, buildName, buildNumber, buildUrl s
 	verifyExistInArtifactoryByProps(tests.GetSimpleUploadExpectedRepo1(), tests.RtRepo1+"/*", props, t)
 
 	// Get build info.
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, buildName, buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, buildName, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return buildinfo.BuildInfo{}, err
@@ -610,7 +775,7 @@ func uploadFilesAndGetBuildInfo(t *testing.T, buildName, buildNumber, buildUrl s
 		return buildinfo.BuildInfo{}, err
 	}
 	buildInfo := publishedBuildInfo.BuildInfo
-	validateBuildInfo(buildInfo, t, 0, 9, buildName)
+	validateBuildInfo(buildInfo, t, 0, 9, buildName, buildinfo.Generic)
 	return buildInfo, nil
 }
 
@@ -661,7 +826,7 @@ func TestModuleName(t *testing.T) {
 				exeCommand.execFunc(t, exeCommand.args...)
 			}
 			assert.NoError(t, artifactoryCli.Exec("bp", buildName, test.buildNumber))
-			publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, buildName, test.buildNumber)
+			publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, buildName, test.buildNumber)
 			if err != nil {
 				assert.NoError(t, err)
 				return
@@ -671,18 +836,18 @@ func TestModuleName(t *testing.T) {
 				return
 			}
 			buildInfo := publishedBuildInfo.BuildInfo
-			validateBuildInfo(buildInfo, t, test.expectedDependencies, test.expectedArtifacts, test.moduleName)
+			validateBuildInfo(buildInfo, t, test.expectedDependencies, test.expectedArtifacts, test.moduleName, buildinfo.Generic)
 		})
 	}
 
-	inttestutils.DeleteBuild(artifactoryDetails.Url, buildName, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, buildName, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func collectDepsAndPublishBuild(badTest buildAddDepsBuildInfoTestParams, useEnvBuildNameAndNumber bool, t *testing.T) {
 	noCredsCli := tests.NewJfrogCli(execMain, "jfrog rt", "")
 	// Remove old tests data from fs if exists
-	err := utils.RemoveBuildDir(badTest.buildName, badTest.buildNumber)
+	err := utils.RemoveBuildDir(badTest.buildName, badTest.buildNumber, "")
 	assert.NoError(t, err)
 
 	command := []string{"bad"}
@@ -701,7 +866,7 @@ func collectDepsAndPublishBuild(badTest buildAddDepsBuildInfoTestParams, useEnvB
 }
 
 func validateBuildAddDepsBuildInfo(t *testing.T, buildInfoTestParams buildAddDepsBuildInfoTestParams) {
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, buildInfoTestParams.buildName, buildInfoTestParams.buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, buildInfoTestParams.buildName, buildInfoTestParams.buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return

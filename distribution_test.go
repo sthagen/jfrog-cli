@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"github.com/jfrog/jfrog-client-go/utils/log"
 	"io/ioutil"
 	"path/filepath"
 	"testing"
@@ -22,7 +23,7 @@ import (
 const bundleVersion = "10"
 
 var (
-	distributionDetails *config.ArtifactoryDetails
+	distributionDetails *config.ServerDetails
 	distAuth            auth.ServiceDetails
 	distHttpDetails     httputils.HttpClientDetails
 	// JFrog CLI for Distribution commands
@@ -41,7 +42,7 @@ func CleanDistributionTests() {
 }
 
 func authenticateDistribution() string {
-	distributionDetails = &config.ArtifactoryDetails{DistributionUrl: *tests.RtDistributionUrl}
+	distributionDetails = &config.ServerDetails{DistributionUrl: *tests.RtDistributionUrl}
 	cred := "--dist-url=" + *tests.RtDistributionUrl
 	if *tests.RtAccessToken != "" {
 		distributionDetails.AccessToken = *tests.RtDistributionAccessToken
@@ -79,7 +80,7 @@ func initDistributionTest(t *testing.T) {
 func cleanDistributionTest(t *testing.T) {
 	distributionCli.Exec("rbdel", tests.BundleName, bundleVersion, "--site=*", "--delete-from-dist", "--quiet")
 	inttestutils.WaitForDeletion(t, tests.BundleName, bundleVersion, distHttpDetails)
-	inttestutils.CleanDistributionRepositories(t, artifactoryDetails)
+	inttestutils.CleanDistributionRepositories(t, serverDetails)
 	tests.CleanFileSystem()
 }
 
@@ -460,6 +461,78 @@ func TestBundlePathMappingUsingSpec(t *testing.T) {
 	assert.NoError(t, err)
 	verifyExistInArtifactory(tests.GetBundleMappingExpected(), spec, t)
 
+	cleanDistributionTest(t)
+}
+
+func TestReleaseBundleCreateDetailedSummary(t *testing.T) {
+	initDistributionTest(t)
+
+	// Upload files
+	specFile, err := tests.CreateSpec(tests.DistributionUploadSpecB)
+	assert.NoError(t, err)
+	runRt(t, "u", "--spec="+specFile)
+
+	buffer, previousLog := tests.RedirectLogOutputToBuffer()
+	// Restore previous logger when the function returns
+	defer log.SetLogger(previousLog)
+
+	// Create a release bundle with b2.in
+	runRb(t, "rbc", tests.BundleName, bundleVersion, tests.DistRepo1+"/data/b2.in", "--sign", "--detailed-summary")
+	inttestutils.VerifyLocalBundleExistence(t, tests.BundleName, bundleVersion, true, distHttpDetails)
+
+	tests.VerifySha256DetailedSummaryFromBuffer(t, buffer, previousLog)
+
+	// Cleanup
+	cleanDistributionTest(t)
+}
+
+func TestReleaseBundleUpdateDetailedSummary(t *testing.T) {
+	initDistributionTest(t)
+
+	// Upload files
+	specFile, err := tests.CreateSpec(tests.DistributionUploadSpecB)
+	assert.NoError(t, err)
+	runRt(t, "u", "--spec="+specFile)
+
+	buffer, previousLog := tests.RedirectLogOutputToBuffer()
+	// Restore previous logger when the function returns
+	defer log.SetLogger(previousLog)
+
+	// Create a release bundle with b2.in
+	runRb(t, "rbc", tests.BundleName, bundleVersion, tests.DistRepo1+"/data/b2.in")
+	inttestutils.VerifyLocalBundleExistence(t, tests.BundleName, bundleVersion, true, distHttpDetails)
+
+	// Update release bundle to have b1.in
+	runRb(t, "rbu", tests.BundleName, bundleVersion, tests.DistRepo1+"/data/b1.in", "--sign", "--detailed-summary")
+
+	tests.VerifySha256DetailedSummaryFromBuffer(t, buffer, previousLog)
+
+	// Cleanup
+	cleanDistributionTest(t)
+}
+
+func TestReleaseBundleSignDetailedSummary(t *testing.T) {
+	initDistributionTest(t)
+
+	// Upload files
+	specFile, err := tests.CreateSpec(tests.DistributionUploadSpecB)
+	assert.NoError(t, err)
+	runRt(t, "u", "--spec="+specFile)
+
+	buffer, previousLog := tests.RedirectLogOutputToBuffer()
+	// Restore previous logger when the function returns
+	defer log.SetLogger(previousLog)
+
+	// Create a release bundle with b2.in
+	runRb(t, "rbc", tests.BundleName, bundleVersion, tests.DistRepo1+"/data/b2.in")
+	inttestutils.VerifyLocalBundleExistence(t, tests.BundleName, bundleVersion, true, distHttpDetails)
+
+	// Update release bundle to have b1.in
+	runRb(t, "rbs", tests.BundleName, bundleVersion, "--detailed-summary")
+
+	tests.VerifySha256DetailedSummaryFromBuffer(t, buffer, previousLog)
+
+	// Cleanup
 	cleanDistributionTest(t)
 }
 

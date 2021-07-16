@@ -3,9 +3,12 @@ package tests
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/jfrog/jfrog-cli/utils/summary"
+	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -29,6 +32,7 @@ import (
 	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"github.com/stretchr/testify/assert"
 
+	commandutils "github.com/jfrog/jfrog-cli-core/artifactory/commands/utils"
 	"github.com/jfrog/jfrog-client-go/artifactory/services/utils"
 	"github.com/jfrog/jfrog-client-go/auth"
 	"github.com/jfrog/jfrog-client-go/utils/errorutils"
@@ -66,6 +70,7 @@ var HideUnitTestLog *bool
 var TestPip *bool
 var PipVirtualEnv *string
 var TestPlugins *bool
+var timestampAdded bool
 
 func init() {
 	RtUrl = flag.String("rt.url", "http://127.0.0.1:8081/artifactory/", "Artifactory url")
@@ -126,7 +131,7 @@ func VerifyExistLocally(expected, actual []string, t *testing.T) {
 
 func ValidateListsIdentical(expected, actual []string) error {
 	if len(actual) != len(expected) {
-		return errors.New("Unexpected behavior, expected: " + strconv.Itoa(len(expected)) + " files, found: " + strconv.Itoa(len(actual)))
+		return errors.New(fmt.Sprintf("Unexpected behavior, \nexpected: [%s], \nfound:    [%s]", strings.Join(expected, ", "), strings.Join(actual, ", ")))
 	}
 	err := compare(expected, actual)
 	return err
@@ -191,7 +196,7 @@ func GetFilePathForBintray(filename, path string, a ...string) string {
 }
 
 func GetFilePathForArtifactory(fileName string) string {
-	return GetTestResourcesPath() + "specs/" + fileName
+	return GetTestResourcesPath() + "filespecs/" + fileName
 }
 
 func GetTestsLogsDir() (string, error) {
@@ -277,6 +282,14 @@ func (m *gitManager) GetRevision() (string, string, error) {
 	return m.execGit("show", "-s", "--format=%H", "HEAD")
 }
 
+func (m *gitManager) GetBranch() (string, string, error) {
+	return m.execGit("branch", "--show-current")
+}
+
+func (m *gitManager) GetMessage(revision string) (string, string, error) {
+	return m.execGit("show", "-s", "--format=%B", revision)
+}
+
 func (m *gitManager) execGit(args ...string) (string, string, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -290,9 +303,9 @@ func (m *gitManager) execGit(args ...string) (string, string, error) {
 	return strings.TrimSpace(stdout.String()), strings.TrimSpace(stderr.String()), err
 }
 
-func DeleteFiles(deleteSpec *spec.SpecFiles, artifactoryDetails *config.ArtifactoryDetails) (successCount, failCount int, err error) {
+func DeleteFiles(deleteSpec *spec.SpecFiles, serverDetails *config.ServerDetails) (successCount, failCount int, err error) {
 	deleteCommand := generic.NewDeleteCommand()
-	deleteCommand.SetThreads(3).SetSpec(deleteSpec).SetRtDetails(artifactoryDetails).SetDryRun(false)
+	deleteCommand.SetThreads(3).SetSpec(deleteSpec).SetServerDetails(serverDetails).SetDryRun(false)
 	reader, err := deleteCommand.GetPathsToDelete()
 	if err != nil {
 		return 0, 0, err
@@ -302,8 +315,8 @@ func DeleteFiles(deleteSpec *spec.SpecFiles, artifactoryDetails *config.Artifact
 }
 
 // This function makes no assertion, caller is responsible to assert as needed.
-func GetBuildInfo(artDetails *config.ArtifactoryDetails, buildName, buildNumber string) (pbi *buildinfo.PublishedBuildInfo, found bool, err error) {
-	servicesManager, err := artUtils.CreateServiceManager(artDetails, false)
+func GetBuildInfo(serverDetails *config.ServerDetails, buildName, buildNumber string) (pbi *buildinfo.PublishedBuildInfo, found bool, err error) {
+	servicesManager, err := artUtils.CreateServiceManager(serverDetails, -1, false)
 	if err != nil {
 		return nil, false, err
 	}
@@ -373,6 +386,7 @@ func GetNonVirtualRepositories() map[*string]string {
 		TestNpm:          {&NpmRepo, &NpmRemoteRepo},
 		TestNuget:        {},
 		TestPip:          {&PypiRemoteRepo},
+		TestPlugins:      {&RtRepo1},
 	}
 	return getNeededRepositories(nonVirtualReposMap)
 }
@@ -402,6 +416,10 @@ func GetAllRepositoriesNames() []string {
 		baseRepoNames = append(baseRepoNames, *repoName)
 	}
 	return baseRepoNames
+}
+
+func GetTestUsersNames() []string {
+	return []string{UserName1, UserName2}
 }
 
 func GetBuildNames() []string {
@@ -463,6 +481,10 @@ func getSubstitutionMap() map[string]string {
 
 // Add timestamp to builds and repositories names
 func AddTimestampToGlobalVars() {
+	// Make sure the global timestamp is added only once even in case of multiple tests flags
+	if timestampAdded {
+		return
+	}
 	timestampSuffix := "-" + strconv.FormatInt(time.Now().Unix(), 10)
 	// Repositories
 	BintrayRepo += timestampSuffix
@@ -500,6 +522,7 @@ func AddTimestampToGlobalVars() {
 	RtBuildName1 += timestampSuffix
 	RtBuildName2 += timestampSuffix
 	RtBuildNameWithSpecialChars += timestampSuffix
+	RtPermissionTargetName += timestampSuffix
 
 	// Users
 	UserName1 += timestampSuffix
@@ -507,6 +530,8 @@ func AddTimestampToGlobalVars() {
 	rand.Seed(time.Now().Unix())
 	Password1 += timestampSuffix + strconv.FormatFloat(rand.Float64(), 'f', 2, 32)
 	Password2 += timestampSuffix + strconv.FormatFloat(rand.Float64(), 'f', 2, 32)
+
+	timestampAdded = true
 }
 
 func ReplaceTemplateVariables(path, destPath string) (string, error) {
@@ -545,10 +570,10 @@ func CreateSpec(fileName string) (string, error) {
 	return searchFilePath, err
 }
 
-func ConvertSliceToMap(props []utils.Property) map[string]string {
-	propsMap := make(map[string]string)
+func ConvertSliceToMap(props []utils.Property) map[string][]string {
+	propsMap := make(map[string][]string)
 	for _, item := range props {
-		propsMap[item.Key] = item.Value
+		propsMap[item.Key] = append(propsMap[item.Key], item.Value)
 	}
 	return propsMap
 }
@@ -586,14 +611,14 @@ func CleanUpOldItems(baseItemNames []string, getActualItems func() ([]string, er
 				continue
 			}
 
-			repoTimestamp, err := strconv.ParseInt(regexGroups[len(regexGroups)-1], 10, 64)
+			itemTimestamp, err := strconv.ParseInt(regexGroups[len(regexGroups)-1], 10, 64)
 			if err != nil {
 				log.Warn("Error while parsing timestamp of ", item, err)
 				continue
 			}
 
-			repoTime := time.Unix(repoTimestamp, 0)
-			if now.Sub(repoTime).Hours() > 24 {
+			itemTime := time.Unix(itemTimestamp, 0)
+			if now.Sub(itemTime).Hours() > 24 {
 				deleteItem(item)
 			}
 		}
@@ -609,4 +634,45 @@ func RedirectLogOutputToBuffer() (buffer *bytes.Buffer, previousLog log.Log) {
 	newLog.SetOutputWriter(buffer)
 	log.SetLogger(newLog)
 	return buffer, previousLog
+}
+
+// Set new logger with output redirection to a null logger. This is useful for negative tests.
+// Caller is responsible to set the old log back.
+func RedirectLogOutputToNil() (previousLog log.Log) {
+	previousLog = log.Logger
+	newLog := log.NewLogger(corelog.GetCliLogLevel(), nil)
+	newLog.SetOutputWriter(ioutil.Discard)
+	newLog.SetLogsWriter(ioutil.Discard)
+	log.SetLogger(newLog)
+	return previousLog
+}
+
+func VerifySha256DetailedSummaryFromBuffer(t *testing.T, buffer *bytes.Buffer, logger log.Log) {
+	content := buffer.Bytes()
+	buffer.Reset()
+	logger.Output(string(content))
+
+	var result summary.BuildInfoSummary
+	err := json.Unmarshal(content, &result)
+	assert.NoError(t, err)
+
+	assert.Equal(t, summary.Success, result.Status)
+	assert.True(t, result.Totals.Success > 0)
+	assert.Equal(t, 0, result.Totals.Failure)
+	// Verify a sha256 was returned
+	assert.NotEmpty(t, result.Sha256Array, "Summary validation failed - no sha256 has returned from Artifactory.")
+	for _, sha256 := range result.Sha256Array {
+		// Verify sha256 is valid (a string size 256 characters) and not an empty string.
+		assert.Equal(t, 64, len(sha256.Sha256Str), "Summary validation failed - invalid sha256 has returned from artifactory")
+	}
+}
+
+func VerifySha256DetailedSummaryFromResult(t *testing.T, result *commandutils.Result) {
+	result.Reader()
+	reader := result.Reader()
+	defer reader.Close()
+	assert.NoError(t, reader.GetError())
+	for transferDetails := new(clientutils.FileTransferDetails); reader.NextRecord(transferDetails) == nil; transferDetails = new(clientutils.FileTransferDetails) {
+		assert.Equal(t, 64, len(transferDetails.Sha256), "Summary validation failed - invalid sha256 has returned from artifactory")
+	}
 }

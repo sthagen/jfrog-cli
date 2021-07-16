@@ -1,3 +1,110 @@
+# Release Notes
+
+## 1.50.2 (July 14, 2021)
+- Bug fix - "jfrog rt docker-push" and "jfrog rt docker-pull" commands fail
+
+## 1.50.1 (July 14, 2021)
+- Bug fix - When using the --detailed-summary option, the returned upload path is incorrect for the "jfrog rt gp" and "jfrog rt mvn" commands
+- Bug fix - When using the --detailed-summary option, there are additional log messages added to stdout, making it impossible to parse the summary
+
+## 1.50.0 (June 24, 2021)
+- New --retries option for the search, set-props, delete-props, delete, copy and move commands
+
+## 1.49.0 (June 17, 2021)
+- New --detailed-summary option added to the "jfrog rt mvn", "jfrog rt gradle", "jfrog rt dp" and "jfrog rt gp" commands
+- The "jfrog rt s", "jfrog rt del", "jfrog rt sp" and "jfrog rt delp" commands no longer require the pattern argument when used with the --build or --bundle options
+- Bug fix - JFrog CLI's rpm package license was updated to Apache-2.0
+
+## 1.48.1 (May 28, 2021)
+- Bug fix - "jfrog rt go get" fails to collect build-info, if used with an internal module package
+
+## 1.48.0 (May 23, 2021)
+- New "jfrog ci-setup" command
+- Support for yarn - new "jfrog rt yarn" command
+- New --detailed-summary option added to the "jfrog rt npm-publish" command
+- New --detailed-summary option added to the release-bundle create and sign commands
+- Bug fix - Temp files are not deleted after download
+- Bug fix - Change the permission of the npmrc file created by the "jfrog rt npmi" command
+
+## 1.47.3 (May 15, 2021)
+- Bug fix - "jfrog rt upload" - using ANT patterns fails to convert doube asteriks to directory range.
+- Bug fix - "jfrog rt npm-install" can fail when .npmrc includes 'json=true'.
+- Bug fix - "jfrog rt nuget" & "jfrog rt dotnet" can fail when there are multiple .net projects in the same directory.
+- Bug fix - "jfrog rt build-publish" module type is missing in build-info modules.
+- JFrog CLI binaries are now also published for the ppc64 and ppc64le Linux architectures.
+- "jfrog config add" - New --overwrite option.
+
+## 1.47.2 (May 5, 2021)
+- Bug fix - the "jfrog rt bpr" command ignores the JFROG_CLI_BUILD_PROJECT environment variable.
+- Bug fix - Unable to upload a file if its name includes semicolons.
+- Bug fix - Upgrade jfrog-client-go, which includes the upgrade of go-git v4.7.1, to resolve errors that occur when collecting data from the local git repository.
+
+## 1.47.1 (April 29, 2021)
+- Bug fix - Error when unmarshalling response received from JFrog Distribution
+
+## 1.47.0 (April 28, 2021)
+- "jfrog rt bp" -  New --detailed-summary option added
+- "jfrog rt u" - The --detailed-summary option now also returns sha256 of the uploaded files
+- The maven and gradle extractors were upgraded
+- The value of the JFROG_CLI_USER_AGENT environment variable now also controls the agent name in the build-info
+- Bug fix - The dryRun option of release bundle management APIs returns an error 
+- Bug fix - Cannot install a jfrog-cli plugin before uninstalling the installed version
+- Bug fix - The "jfrog rt bpr" command ignores the --project option
+
+## 1.46.4 (April 19, 2021)
+- Bug fix - Download fails with panic, if filtered build does not exist
+- Bug fix - Remove rt URL validation on config command
+- Bug fix - 'jfrog --version' shows error an error on windows 2012
+- Bug fix - Panic is thrown when providing a wrong image tag
+- Bug fix - Config import can fail is some scenarios
+- Ignores the transitive option when downloading, if Artifactory version is not compatible
+- Modify the separator used for creating the temp dir, which stored the build-info before it is published
+- Support for npm 7.7
+
+## 1.46.3 (April 16, 2021)
+- Bug fix - "jfrog rt u" can fail while reading the latest git commit message
+
+## 1.46.2 (April 15, 2021)
+- Bug fix - "jfrog rt dl" with --explode can fail on windows
+
+## 1.46.1 (April 5, 2021)
+- Bug fix - "jfrog xr curl" and "jfrog rt curl" don't recognize the --server-id option.
+
+## 1.46.0 (April 4, 2021)
+- Breaking change - The "jfrog rt go-recursive-command" is now removed
+- New "jfrog xr curl" command
+- New "transitive" option has been added to Artifactory's search and download commands, to expand the search to include remote repos (requires Artifactory 7.17)
+- The JFROG_CLI_JCENTER_REMOTE_SERVER and JFROG_CLI_JCENTER_REMOTE_REPO environment variables are now deprecated, and replaced with the new (single) JFROG_CLI_EXTRACTORS_REMOTE environment variable
+- The "jfrog rt go-publish" command now uses the configuration added by the "jfrog rt go-config" command.
+
+## 1.45.2 (March 18, 2021)
+- Bug fix - Uploading files to Artifactory with "archive=zip" causes high memory consumption.
+- Add VCS commit message to buildinfo.
+- NPM build-info now includes depedencies hierarchy.
+- Block the usage of "excludeProps" with "aql" in file specs.
+- Validate container name when pushing docker images.
+- New File Spec schema added. This schema can help to build and validate File Specs.
+
+## 1.45.1 (March 10, 2021)
+- Bug fix - panic when running build-docker-create command if image name does not include slash or colon.
+- Bug fix - wrong usage for the config 'add' and 'edit' commands.
+- Bug fix - missing --server-id option for the "bad" command.
+- Bug fix - Missing --project option for the "bce" command.
+
+## 1.45.0 (March 9, 2021)
+- New "jfrog config" command, replacing the old "jfrog rt config" command.
+- Support for private JFrog CLI Plugins.
+- New full-jfrog-cli docker image
+- "jfrog rt build-add-dependencies" - support collecting the dependencies from Artifactory.
+- Allow uploading files to Artifactory, after packing them in a zip archive.
+- Allow specifying Artifactory project, when publishing build-info.
+- Support for ANT patterns when uploading files to Artifactory.
+- Download artifacts of all builds, including aggregated (referenced) builds.
+- Support fetching VCS attached properties, when git submodules is used.
+- Add new "vcs.branch" property to uploaded build artifacts.
+- Bug fix - prompt for Artifactory's SSH passphrase when using "jfrog config".
+- Bug fix - "jfrog rt build-add-git" - support the case where the revision no longer exists in the build log.
+
 ## 1.44.0 (January 31, 2021)
 - New users-create and user-delete commands
 - New group-create, group-update and group-delete commands

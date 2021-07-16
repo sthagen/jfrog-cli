@@ -84,7 +84,7 @@ func SendGpgKeys(artHttpDetails httputils.HttpClientDetails, distHttpDetails htt
 
 	// Send public and private keys to Distribution
 	content := fmt.Sprintf(distributionGpgKeyCreatePattern, publicKey, privateKey)
-	resp, body, err := client.SendPut(*tests.RtDistributionUrl+"api/v1/keys/pgp", []byte(content), distHttpDetails)
+	resp, body, err := client.SendPut(*tests.RtDistributionUrl+"api/v1/keys/pgp", []byte(content), distHttpDetails, "")
 	coreutils.ExitOnErr(err)
 	if resp.StatusCode != http.StatusOK {
 		log.Error(resp.Status)
@@ -94,7 +94,7 @@ func SendGpgKeys(artHttpDetails httputils.HttpClientDetails, distHttpDetails htt
 
 	// Send public key to Artifactory
 	content = fmt.Sprintf(artifactoryGpgKeyCreatePattern, publicKey)
-	resp, body, err = client.SendPost(*tests.RtUrl+"api/security/keys/trusted", []byte(content), artHttpDetails)
+	resp, body, err = client.SendPost(*tests.RtUrl+"api/security/keys/trusted", []byte(content), artHttpDetails, "")
 	coreutils.ExitOnErr(err)
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
 		log.Error(resp.Status)
@@ -162,7 +162,7 @@ func WaitForDistribution(t *testing.T, bundleName, bundleVersion string, distHtt
 	assert.NoError(t, err)
 
 	for i := 0; i < 120; i++ {
-		resp, body, _, err := client.SendGet(*tests.RtDistributionUrl+"api/v1/release_bundle/"+bundleName+"/"+bundleVersion+"/distribution", true, distHttpDetails)
+		resp, body, _, err := client.SendGet(*tests.RtDistributionUrl+"api/v1/release_bundle/"+bundleName+"/"+bundleVersion+"/distribution", true, distHttpDetails, "")
 		assert.NoError(t, err)
 		if resp.StatusCode != http.StatusOK {
 			t.Error(resp.Status)
@@ -201,7 +201,7 @@ func WaitForDeletion(t *testing.T, bundleName, bundleVersion string, distHttpDet
 	assert.NoError(t, err)
 
 	for i := 0; i < 120; i++ {
-		resp, body, _, err := client.SendGet(*tests.RtDistributionUrl+"api/v1/release_bundle/"+bundleName+"/"+bundleVersion+"/distribution", true, distHttpDetails)
+		resp, body, _, err := client.SendGet(*tests.RtDistributionUrl+"api/v1/release_bundle/"+bundleName+"/"+bundleVersion+"/distribution", true, distHttpDetails, "")
 		assert.NoError(t, err)
 		if resp.StatusCode == http.StatusNotFound {
 			return
@@ -221,7 +221,7 @@ func getLocalBundle(t *testing.T, bundleName, bundleVersion string, distHttpDeta
 	client, err := httpclient.ClientBuilder().Build()
 	assert.NoError(t, err)
 
-	resp, body, _, err := client.SendGet(*tests.RtDistributionUrl+"api/v1/release_bundle/"+bundleName+"/"+bundleVersion, true, distHttpDetails)
+	resp, body, _, err := client.SendGet(*tests.RtDistributionUrl+"api/v1/release_bundle/"+bundleName+"/"+bundleVersion, true, distHttpDetails, "")
 	assert.NoError(t, err)
 	return resp, body
 }
@@ -245,7 +245,7 @@ func ListAllBundlesNames(distHttpDetails httputils.HttpClientDetails) ([]string,
 	}
 
 	// Send get request
-	resp, body, _, err := client.SendGet(*tests.RtDistributionUrl+"api/v1/release_bundle", true, distHttpDetails)
+	resp, body, _, err := client.SendGet(*tests.RtDistributionUrl+"api/v1/release_bundle", true, distHttpDetails, "")
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func ListAllBundlesNames(distHttpDetails httputils.HttpClientDetails) ([]string,
 }
 
 // Clean up 'cli-tests-dist1-<timestamp>' and 'cli-tests-dist2-<timestamp>' after running a distribution test
-func CleanDistributionRepositories(t *testing.T, distributionDetails *config.ArtifactoryDetails) {
+func CleanDistributionRepositories(t *testing.T, distributionDetails *config.ServerDetails) {
 	deleteSpec := spec.NewBuilder().Pattern(tests.DistRepo1).BuildSpec()
 	tests.DeleteFiles(deleteSpec, distributionDetails)
 	deleteSpec = spec.NewBuilder().Pattern(tests.DistRepo1).BuildSpec()

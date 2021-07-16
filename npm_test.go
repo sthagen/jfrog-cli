@@ -3,6 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	npmcoreutils "github.com/jfrog/jfrog-cli-core/artifactory/commands/utils"
+	"github.com/jfrog/jfrog-cli-core/common/commands"
+	clientutils "github.com/jfrog/jfrog-client-go/utils"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -12,9 +15,9 @@ import (
 
 	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/npm"
 	"github.com/jfrog/jfrog-cli-core/artifactory/spec"
 	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
-	"github.com/jfrog/jfrog-cli-core/artifactory/utils/npm"
 	"github.com/jfrog/jfrog-cli-core/utils/ioutils"
 	"github.com/jfrog/jfrog-cli/inttestutils"
 	"github.com/jfrog/jfrog-cli/utils/tests"
@@ -38,7 +41,7 @@ const npmFlagName = "npm"
 func cleanNpmTest() {
 	os.Unsetenv(coreutils.HomeDir)
 	deleteSpec := spec.NewBuilder().Pattern(tests.NpmRepo).BuildSpec()
-	tests.DeleteFiles(deleteSpec, artifactoryDetails)
+	tests.DeleteFiles(deleteSpec, serverDetails)
 	tests.CleanFileSystem()
 }
 
@@ -63,7 +66,6 @@ func runTestNpm(t *testing.T, native bool) {
 		{command: "npm-install", repo: tests.NpmRemoteRepo, wd: npmScopedProjectPath, validationFunc: validateNpmInstall},
 		{command: "npm-install", repo: tests.NpmRemoteRepo, wd: npmNpmrcProjectPath, validationFunc: validateNpmInstall},
 		{command: "npm-install", repo: tests.NpmRemoteRepo, wd: npmProjectPath, validationFunc: validateNpmInstall, npmArgs: "--production"},
-		{command: "npm-install", repo: tests.NpmRemoteRepo, wd: npmProjectPath, validationFunc: validateNpmInstall, npmArgs: "-only=dev"},
 		{command: "npmi", repo: tests.NpmRemoteRepo, wd: npmNpmrcProjectPath, validationFunc: validateNpmPackInstall, npmArgs: "yaml"},
 		{command: "npmp", repo: tests.NpmRepo, wd: npmScopedProjectPath, moduleName: ModuleNameJFrogTest, validationFunc: validateNpmScopedPublish},
 		{command: "npm-publish", repo: tests.NpmRepo, wd: npmProjectPath, validationFunc: validateNpmPublish},
@@ -106,11 +108,11 @@ func runTestNpm(t *testing.T, native bool) {
 	err = os.Chdir(wd)
 	assert.NoError(t, err)
 	cleanNpmTest()
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.NpmBuildName, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.NpmBuildName, artHttpDetails)
 }
 
 func readModuleId(t *testing.T, wd string) string {
-	packageInfo, err := npm.ReadPackageInfoFromPackageJson(filepath.Dir(wd))
+	packageInfo, err := npmcoreutils.ReadPackageInfoFromPackageJson(filepath.Dir(wd))
 	assert.NoError(t, err)
 	return packageInfo.BuildInfoModuleId()
 }
@@ -131,7 +133,7 @@ func TestNpmWithGlobalConfig(t *testing.T) {
 }
 
 func validatePartialsBuildInfo(t *testing.T, buildNumber, moduleName string) {
-	partials, err := utils.ReadPartialBuildInfoFiles(tests.NpmBuildName, buildNumber)
+	partials, err := utils.ReadPartialBuildInfoFiles(tests.NpmBuildName, buildNumber, "")
 	assert.NoError(t, err)
 	for _, module := range partials {
 		assert.Equal(t, moduleName, module.ModuleId)
@@ -175,6 +177,17 @@ func initNpmFilesTest(t *testing.T, native bool) (npmProjectPath, npmScopedProje
 	return
 }
 
+func initNpmProjectTest(t *testing.T, native bool) (npmProjectPath string) {
+	npmProjectPath, err := filepath.Abs(createNpmProject(t, "npmproject"))
+	assert.NoError(t, err)
+	prepareArtifactoryForNpmBuild(t, filepath.Dir(npmProjectPath))
+	if native {
+		err = createConfigFileForTest([]string{filepath.Dir(npmProjectPath)}, tests.NpmRemoteRepo, tests.NpmRepo, t, utils.Npm, false)
+		assert.NoError(t, err)
+	}
+	return
+}
+
 func initGlobalNpmFilesTest(t *testing.T) (npmProjectPath string) {
 	npmProjectPath, err := filepath.Abs(createNpmProject(t, "npmproject"))
 	assert.NoError(t, err)
@@ -210,14 +223,11 @@ func validateNpmInstall(t *testing.T, npmTestParams npmTestParams) {
 		id     string
 		scopes []string
 	}
-	var expectedDependencies []expectedDependency
-	if !strings.Contains(npmTestParams.npmArgs, "-only=dev") {
-		expectedDependencies = append(expectedDependencies, expectedDependency{id: "xml:1.0.1", scopes: []string{"production"}})
-	}
+	expectedDependencies := []expectedDependency{{id: "xml:1.0.1", scopes: []string{"prod"}}}
 	if !strings.Contains(npmTestParams.npmArgs, "-only=prod") && !strings.Contains(npmTestParams.npmArgs, "-production") {
-		expectedDependencies = append(expectedDependencies, expectedDependency{id: "json:9.0.6", scopes: []string{"development"}})
+		expectedDependencies = append(expectedDependencies, expectedDependency{id: "json:9.0.6", scopes: []string{"dev"}})
 	}
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.NpmBuildName, npmTestParams.buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.NpmBuildName, npmTestParams.buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -252,7 +262,7 @@ func validateNpmInstall(t *testing.T, npmTestParams npmTestParams) {
 }
 
 func validateNpmPackInstall(t *testing.T, npmTestParams npmTestParams) {
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.NpmBuildName, npmTestParams.buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.NpmBuildName, npmTestParams.buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -291,7 +301,7 @@ func validateNpmScopedPublish(t *testing.T, npmTestParams npmTestParams) {
 }
 
 func validateNpmCommonPublish(t *testing.T, npmTestParams npmTestParams) {
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.NpmBuildName, npmTestParams.buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.NpmBuildName, npmTestParams.buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -344,4 +354,38 @@ func runNpm(t *testing.T, native bool, args ...string) {
 		err = artifactoryCli.Exec(args...)
 	}
 	assert.NoError(t, err)
+}
+
+func TestNpmPublishDetailedSummary(t *testing.T) {
+	initNpmTest(t)
+	// Init npm project & npmp command for testing
+	npmProjectPath := strings.TrimSuffix(initNpmProjectTest(t, true), "package.json")
+	configFilePath := filepath.Join(npmProjectPath, ".jfrog", "projects", "npm.yaml")
+	args := []string{"--detailed-summary=true"}
+	npmpCmd := npm.NewNpmPublishCommand()
+	npmpCmd.SetConfigFilePath(configFilePath).SetArgs(args)
+
+	err := commands.Exec(npmpCmd)
+	assert.NoError(t, err)
+
+	result := npmpCmd.Result()
+	assert.NotNil(t, result)
+	reader := result.Reader()
+	assert.NoError(t, reader.GetError())
+	defer reader.Close()
+	// Read result
+	var files []clientutils.FileTransferDetails
+	for transferDetails := new(clientutils.FileTransferDetails); reader.NextRecord(transferDetails) == nil; transferDetails = new(clientutils.FileTransferDetails) {
+		files = append(files, *transferDetails)
+	}
+	// Verify deploy details
+	expectedSourcePath := npmProjectPath + "jfrog-cli-tests-1.0.0.tgz"
+	expectedTargetPath := serverDetails.ArtifactoryUrl + tests.NpmRepo + "/jfrog-cli-tests/-/jfrog-cli-tests-1.0.0.tgz"
+	assert.Equal(t, expectedSourcePath, files[0].SourcePath, "Summary validation failed - unmatched SourcePath.")
+	assert.Equal(t, expectedTargetPath, files[0].TargetPath, "Summary validation failed - unmatched TargetPath.")
+	assert.Equal(t, 1, len(files), "Summary validation failed - only one archive should be deployed.")
+	// Verify sha256 is valid (a string size 256 characters) and not an empty string.
+	assert.Equal(t, 64, len(files[0].Sha256), "Summary validation failed - sha256 should be in size 64 digits.")
+
+	cleanNpmTest()
 }

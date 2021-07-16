@@ -1,6 +1,9 @@
 package main
 
 import (
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/gradle"
+	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
+	"github.com/jfrog/jfrog-cli-core/common/commands"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +27,7 @@ const (
 func cleanGradleTest() {
 	os.Unsetenv(coreutils.HomeDir)
 	deleteSpec := spec.NewBuilder().Pattern(tests.GradleRepo).BuildSpec()
-	tests.DeleteFiles(deleteSpec, artifactoryDetails)
+	tests.DeleteFiles(deleteSpec, serverDetails)
 	tests.CleanFileSystem()
 }
 
@@ -39,7 +42,7 @@ func TestGradleBuildWithServerID(t *testing.T) {
 	buildNumber := "1"
 	runAndValidateGradle(buildGradlePath, configFilePath, buildName, buildNumber, t)
 	assert.NoError(t, artifactoryCli.Exec("bp", buildName, buildNumber))
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, buildName, buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, buildName, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -49,7 +52,7 @@ func TestGradleBuildWithServerID(t *testing.T) {
 		return
 	}
 	buildInfo := publishedBuildInfo.BuildInfo
-	validateBuildInfo(buildInfo, t, 0, 1, gradleModuleId)
+	validateBuildInfo(buildInfo, t, 0, 1, gradleModuleId, buildinfo.Gradle)
 
 	cleanGradleTest()
 }
@@ -73,7 +76,7 @@ func TestNativeGradleBuildWithServerID(t *testing.T) {
 	verifyExistInArtifactoryByProps(tests.GetGradleDeployedArtifacts(), tests.GradleRepo+"/*", "build.name="+tests.GradleBuildName+";build.number="+buildNumber, t)
 	assert.NoError(t, artifactoryCli.Exec("bp", tests.GradleBuildName, buildNumber))
 
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.GradleBuildName, buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.GradleBuildName, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -83,7 +86,54 @@ func TestNativeGradleBuildWithServerID(t *testing.T) {
 		return
 	}
 	buildInfo := publishedBuildInfo.BuildInfo
-	validateBuildInfo(buildInfo, t, 0, 1, gradleModuleId)
+	validateBuildInfo(buildInfo, t, 0, 1, gradleModuleId, buildinfo.Gradle)
+	cleanGradleTest()
+}
+
+func TestNativeGradleBuildWithServerIDAndDetailedSummary(t *testing.T) {
+	initGradleTest(t)
+	buildGradlePath := createGradleProject(t, "gradleproject")
+	configFilePath := filepath.Join(filepath.FromSlash(tests.GetTestResourcesPath()), "buildspecs", tests.GradleConfig)
+	destPath := filepath.Join(filepath.Dir(buildGradlePath), ".jfrog", "projects")
+	createConfigFile(destPath, configFilePath, t)
+	oldHomeDir := changeWD(t, filepath.Dir(buildGradlePath))
+	buildNumber := "1"
+	buildGradlePath = strings.Replace(buildGradlePath, `\`, "/", -1) // Windows compatibility.
+
+	// Test gradle with detailed summary without buildinfo props.
+	filteredGradleArgs := []string{"clean artifactoryPublish", "-b" + buildGradlePath}
+	gradleCmd := gradle.NewGradleCommand().SetConfiguration(new(utils.BuildConfiguration)).SetTasks(strings.Join(filteredGradleArgs, " ")).SetConfigPath(filepath.Join(destPath, "gradle.yaml")).SetDetailedSummary(true)
+	assert.NoError(t, commands.Exec(gradleCmd))
+	// Validate sha256
+	tests.VerifySha256DetailedSummaryFromResult(t, gradleCmd.Result())
+
+	// Test gradle with detailed summary + buildinfo.
+	buildConfiguration := &utils.BuildConfiguration{BuildName: tests.GradleBuildName, BuildNumber: buildNumber}
+	gradleCmd = gradle.NewGradleCommand().SetConfiguration(buildConfiguration).SetTasks(strings.Join(filteredGradleArgs, " ")).SetConfigPath(filepath.Join(destPath, "gradle.yaml")).SetDetailedSummary(true)
+	assert.NoError(t, commands.Exec(gradleCmd))
+	// Validate sha256
+	tests.VerifySha256DetailedSummaryFromResult(t, gradleCmd.Result())
+
+	err := os.Chdir(oldHomeDir)
+	assert.NoError(t, err)
+	// Validate build info
+	searchSpec, err := tests.CreateSpec(tests.SearchAllGradle)
+	assert.NoError(t, err)
+	verifyExistInArtifactory(tests.GetGradleDeployedArtifacts(), searchSpec, t)
+	verifyExistInArtifactoryByProps(tests.GetGradleDeployedArtifacts(), tests.GradleRepo+"/*", "build.name="+tests.GradleBuildName+";build.number="+buildNumber, t)
+	assert.NoError(t, artifactoryCli.Exec("bp", tests.GradleBuildName, buildNumber))
+
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.GradleBuildName, buildNumber)
+	if err != nil {
+		assert.NoError(t, err)
+		return
+	}
+	if !found {
+		assert.True(t, found, "build info was expected to be found")
+		return
+	}
+	buildInfo := publishedBuildInfo.BuildInfo
+	validateBuildInfo(buildInfo, t, 0, 1, gradleModuleId, buildinfo.Gradle)
 	cleanGradleTest()
 }
 
@@ -98,7 +148,7 @@ func TestGradleBuildWithServerIDWithUsesPlugin(t *testing.T) {
 	runAndValidateGradle(buildGradlePath, configFilePath, tests.GradleBuildName, buildNumber, t)
 
 	assert.NoError(t, artifactoryCli.Exec("bp", tests.GradleBuildName, buildNumber))
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.GradleBuildName, buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.GradleBuildName, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -108,7 +158,7 @@ func TestGradleBuildWithServerIDWithUsesPlugin(t *testing.T) {
 		return
 	}
 	buildInfo := publishedBuildInfo.BuildInfo
-	validateBuildInfo(buildInfo, t, 0, 1, gradleModuleId)
+	validateBuildInfo(buildInfo, t, 0, 1, gradleModuleId, buildinfo.Gradle)
 	cleanGradleTest()
 }
 
@@ -132,7 +182,7 @@ func TestGradleBuildWithCredentials(t *testing.T) {
 
 	runAndValidateGradle(buildGradlePath, configFilePath, tests.GradleBuildName, buildNumber, t)
 	assert.NoError(t, artifactoryCli.Exec("bp", tests.GradleBuildName, buildNumber))
-	publishedBuildInfo, found, err := tests.GetBuildInfo(artifactoryDetails, tests.GradleBuildName, buildNumber)
+	publishedBuildInfo, found, err := tests.GetBuildInfo(serverDetails, tests.GradleBuildName, buildNumber)
 	if err != nil {
 		assert.NoError(t, err)
 		return
@@ -142,7 +192,7 @@ func TestGradleBuildWithCredentials(t *testing.T) {
 		return
 	}
 	buildInfo := publishedBuildInfo.BuildInfo
-	validateBuildInfo(buildInfo, t, 0, 1, gradleModuleId)
+	validateBuildInfo(buildInfo, t, 0, 1, gradleModuleId, buildinfo.Gradle)
 	cleanGradleTest()
 }
 
@@ -153,7 +203,7 @@ func runAndValidateGradle(buildGradlePath, configFilePath, buildName, buildNumbe
 
 	verifyExistInArtifactory(tests.GetGradleDeployedArtifacts(), searchSpec, t)
 	verifyExistInArtifactoryByProps(tests.GetGradleDeployedArtifacts(), tests.GradleRepo+"/*", "build.name="+buildName+";build.number="+buildNumber, t)
-	inttestutils.ValidateGeneratedBuildInfoModule(t, buildName, buildNumber, []string{gradleModuleId}, buildinfo.Gradle)
+	inttestutils.ValidateGeneratedBuildInfoModule(t, buildName, buildNumber, "", []string{gradleModuleId}, buildinfo.Gradle)
 }
 
 func createGradleProject(t *testing.T, projectName string) string {

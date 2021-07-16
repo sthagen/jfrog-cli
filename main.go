@@ -1,12 +1,17 @@
 package main
 
 import (
+	"os"
+
+	corecommon "github.com/jfrog/jfrog-cli-core/docs/common"
 	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
 	"github.com/jfrog/jfrog-cli-core/utils/log"
+	"github.com/jfrog/jfrog-cli/config"
 	"github.com/jfrog/jfrog-cli/docs/common"
+	"github.com/jfrog/jfrog-cli/docs/general/cisetup"
+	commands "github.com/jfrog/jfrog-cli/general/cisetup"
 	"github.com/jfrog/jfrog-cli/plugins"
 	"github.com/jfrog/jfrog-cli/plugins/utils"
-	"os"
 
 	"github.com/codegangsta/cli"
 	"github.com/jfrog/jfrog-cli/artifactory"
@@ -45,7 +50,7 @@ AUTHOR(S):
    {{range .Authors}}{{ . }}{{end}}
    {{end}}{{if .Commands}}
 COMMANDS:
-   {{range .Commands}}{{join .Names ", "}}{{ "\t" }}{{.Usage}}
+   {{range .Commands}}{{join .Names ", "}}{{ "\t" }}{{if .Description}}{{.Description}}{{else}}{{.Usage}}{{end}}
    {{end}}{{end}}{{if .VisibleFlags}}
 GLOBAL OPTIONS:
    {{range .VisibleFlags}}{{.}}
@@ -56,14 +61,16 @@ Environment Variables:
 `
 
 const subcommandHelpTemplate = `NAME:
-   {{.HelpName}} - {{.Usage}}
+   {{.HelpName}} - {{.Description}}
 
 USAGE:
-   {{.HelpName}} command{{if .VisibleFlags}} [command options]{{end}}[arguments...]
+	{{if .Usage}}{{.Usage}}{{ "\n\t" }}{{end}}{{.HelpName}} command{{if .VisibleFlags}} [command options]{{end}}[arguments...]
 
 COMMANDS:
-   {{range .Commands}}{{join .Names ", "}}{{ "\t" }}{{.Usage}}
-   {{end}}{{if .VisibleFlags}}
+   {{range .Commands}}{{join .Names ", "}}{{ "\t" }}{{.Description}}
+   {{end}}{{if .VisibleFlags}}{{if .ArgsUsage}}
+Arguments:
+{{.ArgsUsage}}{{ "\n" }}{{end}}
 OPTIONS:
    {{range .VisibleFlags}}{{.}}
    {{end}}
@@ -83,7 +90,7 @@ func main() {
 
 func execMain() error {
 	// Set JFrog CLI's user-agent on the jfrog-client-go.
-	clientutils.SetUserAgent(coreutils.GetUserAgent())
+	clientutils.SetUserAgent(coreutils.GetCliUserAgent())
 
 	app := cli.NewApp()
 	app.Name = "jfrog"
@@ -103,33 +110,51 @@ func getCommands() []cli.Command {
 	cliNameSpaces := []cli.Command{
 		{
 			Name:        cliutils.CmdArtifactory,
-			Usage:       "Artifactory commands",
+			Description: "Artifactory commands",
 			Subcommands: artifactory.GetCommands(),
 		},
 		{
 			Name:        cliutils.CmdBintray,
-			Usage:       "Bintray commands",
+			Description: "Bintray commands",
 			Subcommands: bintray.GetCommands(),
 		},
 		{
 			Name:        cliutils.CmdMissionControl,
-			Usage:       "Mission Control commands",
+			Description: "Mission Control commands",
 			Subcommands: missioncontrol.GetCommands(),
 		},
 		{
 			Name:        cliutils.CmdXray,
-			Usage:       "Xray commands",
+			Description: "Xray commands",
 			Subcommands: xray.GetCommands(),
 		},
 		{
 			Name:        cliutils.CmdCompletion,
-			Usage:       "Generate autocomplete scripts",
+			Description: "Generate autocomplete scripts",
 			Subcommands: completion.GetCommands(),
 		},
 		{
 			Name:        cliutils.CmdPlugin,
-			Usage:       "Plugins commands",
+			Description: "Plugins commands",
 			Subcommands: plugins.GetCommands(),
+		},
+		{
+			Name:        cliutils.CmdConfig,
+			Aliases:     []string{"c"},
+			Description: "Config commands",
+			Subcommands: config.GetCommands(),
+		},
+
+		{
+			Name:         "ci-setup",
+			Usage:        cisetup.Description,
+			HelpName:     corecommon.CreateUsage("ci-setup", cisetup.Description, cisetup.Usage),
+			UsageText:    cisetup.Arguments,
+			ArgsUsage:    common.CreateEnvVars(),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return commands.RunCiSetupCmd()
+			},
 		},
 	}
 	return append(cliNameSpaces, utils.GetPlugins()...)

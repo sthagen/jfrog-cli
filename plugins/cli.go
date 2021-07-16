@@ -5,19 +5,21 @@ import (
 	corecommon "github.com/jfrog/jfrog-cli-core/docs/common"
 	"github.com/jfrog/jfrog-cli/docs/common"
 	installdocs "github.com/jfrog/jfrog-cli/docs/plugin/install"
+	publishdocs "github.com/jfrog/jfrog-cli/docs/plugin/publish"
 	uninstalldocs "github.com/jfrog/jfrog-cli/docs/plugin/uninstall"
 	"github.com/jfrog/jfrog-cli/plugins/commands"
+	"github.com/jfrog/jfrog-cli/utils/cliutils"
 )
 
 func GetCommands() []cli.Command {
-	return []cli.Command{
+	return cliutils.GetSortedCommands(cli.CommandsByName{
 		{
 			Name:         "install",
 			Aliases:      []string{"i"},
-			Usage:        installdocs.Description,
+			Description:  installdocs.Description,
 			HelpName:     corecommon.CreateUsage("plugin install", installdocs.Description, installdocs.Usage),
 			UsageText:    installdocs.Arguments,
-			ArgsUsage:    common.CreateEnvVars(),
+			ArgsUsage:    common.CreateEnvVars(installdocs.EnvVar),
 			BashComplete: corecommon.CreateBashCompletionFunc(),
 			Action: func(c *cli.Context) error {
 				return commands.InstallCmd(c)
@@ -26,7 +28,7 @@ func GetCommands() []cli.Command {
 		{
 			Name:         "uninstall",
 			Aliases:      []string{"ui"},
-			Usage:        uninstalldocs.Description,
+			Description:  uninstalldocs.Description,
 			HelpName:     corecommon.CreateUsage("plugin uninstall", uninstalldocs.Description, uninstalldocs.Usage),
 			UsageText:    uninstalldocs.Arguments,
 			ArgsUsage:    common.CreateEnvVars(),
@@ -35,5 +37,17 @@ func GetCommands() []cli.Command {
 				return commands.UninstallCmd(c)
 			},
 		},
-	}
+		{
+			Name:         "publish",
+			Aliases:      []string{"p"},
+			Description:  publishdocs.Description,
+			HelpName:     corecommon.CreateUsage("plugin publish", publishdocs.Description, publishdocs.Usage),
+			UsageText:    publishdocs.Arguments,
+			ArgsUsage:    common.CreateEnvVars(publishdocs.EnvVar),
+			BashComplete: corecommon.CreateBashCompletionFunc(),
+			Action: func(c *cli.Context) error {
+				return commands.PublishCmd(c)
+			},
+		},
+	})
 }

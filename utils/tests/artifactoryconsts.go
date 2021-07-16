@@ -1,17 +1,21 @@
 package tests
 
 import (
+	"github.com/jfrog/jfrog-client-go/artifactory/services"
 	"path/filepath"
 
 	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
-	clientutils "github.com/jfrog/jfrog-client-go/artifactory/services/utils"
+	servicesutils "github.com/jfrog/jfrog-client-go/artifactory/services/utils"
+	clientutils "github.com/jfrog/jfrog-client-go/utils"
 )
 
 const (
 	ArchiveEntriesDownload                 = "archive_entries_download_spec.json"
 	ArchiveEntriesUpload                   = "archive_entries_upload_spec.json"
 	BuildAddDepsDoubleSpec                 = "build_add_deps_double_spec.json"
+	BuildAddDepsDoubleRemoteSpec           = "build_add_deps_double_remote_spec.json"
 	BuildAddDepsSpec                       = "build_add_deps_simple_spec.json"
+	BuildAddDepsRemoteSpec                 = "build_add_deps_simple_remote_spec.json"
 	BuildDownloadSpec                      = "build_download_spec.json"
 	BuildDownloadSpecNoBuildNumber         = "build_download_spec_no_build_number.json"
 	BuildDownloadSpecNoBuildNumberWithSort = "build_download_spec_no_build_number_with_sort.json"
@@ -53,6 +57,7 @@ const (
 	DownloadSpecExclude                    = "download_spec_exclude.json"
 	DownloadSpecExclusions                 = "download_spec_exclusions.json"
 	DownloadWildcardRepo                   = "download_wildcard_repo.json"
+	DownloadAndExplodeArchives             = "download_and_explode_archives.json"
 	GitLfsAssertSpec                       = "git_lfs_assert_spec.json"
 	GitLfsTestRepositoryConfig             = "git_lfs_test_repository_config.json"
 	GoLocalRepositoryConfig                = "go_local_repository_config.json"
@@ -87,6 +92,9 @@ const (
 	SearchGo                               = "search_go.json"
 	SearchDistRepoByInSuffix               = "search_dist_repo_by_in_suffix.json"
 	SearchRepo1ByInSuffix                  = "search_repo1_by_in_suffix.json"
+	SearchRepo1IncludeDirs                 = "search_repo1_include_dirs.json"
+	SearchRepo1NonExistFile                = "search_repo1_ant_test_file.json"
+	SearchRepo1NonExistFileAntExclusions   = "search_repo1_ant_and_exclusions_test_file.json"
 	SearchRepo1TestResources               = "search_repo1_test_resources.json"
 	SearchRepo2                            = "search_repo2.json"
 	SearchSimplePlaceholders               = "search_simple_placeholders.json"
@@ -97,6 +105,8 @@ const (
 	SplitUploadSpecA                       = "upload_split_spec_a.json"
 	SplitUploadSpecB                       = "upload_split_spec_b.json"
 	Temp                                   = "tmp"
+	UploadAntPattern                       = "upload_ant_pattern.json"
+	UploadAntPatternExclusions             = "upload_ant_pattern_exclusions.json"
 	UploadEmptyDirs                        = "upload_empty_dir_spec.json"
 	UploadFileWithParenthesesSpec          = "upload_file_with_parentheses.json"
 	UploadFlatNonRecursive                 = "upload_flat_non_recursive.json"
@@ -108,6 +118,8 @@ const (
 	UploadTempWildcard                     = "upload_temp_wildcard.json"
 	UploadWithPropsSpec                    = "upload_with_props_spec.json"
 	UploadWithPropsSpecdeleteExcludeProps  = "upload_with_props_spec_delete_exclude_props.json"
+	UploadAsArchive                        = "upload_as_archive.json"
+	UploadAsArchiveToDir                   = "upload_as_archive_to_dir.json"
 	VirtualRepositoryConfig                = "specs_virtual_repository_config.json"
 	WinBuildAddDepsSpec                    = "win_simple_build_add_deps_spec.json"
 	WinSimpleDownloadSpec                  = "win_simple_download_spec.json"
@@ -152,11 +164,12 @@ var (
 	RtBuildName1                = "cli-tests-rt-build1"
 	RtBuildName2                = "cli-tests-rt-build2"
 	RtBuildNameWithSpecialChars = "cli-tests-rt-a$+~&^a#-build3"
+	RtPermissionTargetName      = "cli-tests-rt-pt"
 
 	// Users
-	UserName1 = "Alice"
+	UserName1 = "alice"
 	Password1 = "A12356789z"
-	UserName2 = "Alice2"
+	UserName2 = "bob"
 	Password2 = "1B234578y9"
 )
 
@@ -188,9 +201,46 @@ func GetUploadLegacyPropsExpected() []string {
 	}
 }
 
+func GetSearchAppendedBuildNoPatternExpected() []string {
+	return []string{
+		RtRepo1 + "/data/a1.in",
+		RtRepo1 + "/data/a2.in",
+		RtRepo1 + "/data/a3.in",
+	}
+}
+
 func GetSimpleWildcardUploadExpectedRepo1() []string {
 	return []string{
 		RtRepo1 + "/upload_simple_wildcard/github.com/github.in",
+	}
+}
+
+func GetSimpleAntPatternUploadExpectedRepo1() []string {
+	return []string{
+		RtRepo1 + "/bitbucket.in",
+		RtRepo1 + "/github.in",
+	}
+}
+
+func GetAntPatternUploadWithExclusionsExpectedRepo1() []string {
+	return []string{
+		RtRepo1 + "/a1.in",
+		RtRepo1 + "/a2.in",
+		RtRepo1 + "/a3.in",
+		RtRepo1 + "/c1.in",
+		RtRepo1 + "/c2.in",
+		RtRepo1 + "/c3.in",
+	}
+}
+
+func GetAntPatternUploadWithIncludeDirsExpectedRepo1() []string {
+	return []string{
+		RtRepo1 + "/",
+		RtRepo1 + "/folder",
+		RtRepo1 + "/testdata",
+		RtRepo1 + "/testdata/an",
+		RtRepo1 + "/testdata/an/empty",
+		RtRepo1 + "/testdata/an/empty/folder",
 	}
 }
 
@@ -359,6 +409,25 @@ func GetUploadFileNameWithParentheses() []string {
 	}
 }
 
+func GetUploadAsArchive() []string {
+	return []string{
+		RtRepo1 + "/archive/a.zip",
+		RtRepo1 + "/archive/b.zip",
+	}
+}
+
+func GetDownloadArchiveAndExplode() []string {
+	return []string{
+		filepath.Join(Out, "archive/a/a1.in"),
+		filepath.Join(Out, "archive/a/a2.in"),
+		filepath.Join(Out, "archive/a/a3.in"),
+		filepath.Join(Out, "archive/a/b1.in"),
+		filepath.Join(Out, "archive/b/b1.in"),
+		filepath.Join(Out, "archive/b/b2.in"),
+		filepath.Join(Out, "archive/b/b3.in"),
+	}
+}
+
 func GetMoveCopySpecExpected() []string {
 	return []string{
 		RtRepo2 + "/copy_move_target/a1.in",
@@ -489,6 +558,53 @@ func GetExtractedDownload() []string {
 	return []string{
 		filepath.Join(Out, "randFile"),
 		filepath.Join(Out, "concurrent.tar.gz"),
+	}
+}
+
+func GetExtractedDownloadCurDir() []string {
+	return []string{
+		filepath.Join(Out, "p-modules"),
+		filepath.Join(Out, "p-modules", "DownloadAndExplodeCurDirTarget"),
+	}
+}
+
+func GetArchiveConcurrent() []string {
+	return []string{
+		filepath.Join(Out, "a.zip"),
+	}
+}
+
+func GetExtractedDownloadFlatFalse() []string {
+	return []string{
+		filepath.Join(Out, "checkFlat", "file1"),
+		filepath.Join(Out, "checkFlat", "dir", "flat.tar"),
+	}
+}
+
+func GetExtractedDownloadTarFileFlatFalse() []string {
+	return []string{
+		filepath.Join(Out, "checkFlat", "dir", "file1"),
+	}
+}
+
+func GetExtractedDownloadTarFileSpecialChars() []string {
+	return []string{
+		filepath.Join(Out, "dir $+~&^a# test", "dir", "file $+~&^a#1"),
+		filepath.Join(Out, "dir $+~&^a# test", "file $+~&^a#1"),
+	}
+}
+
+func GetExtractedDownloadConcurrent() []string {
+	return []string{
+		filepath.Join(Out, "a/a1.in"),
+		filepath.Join(Out, "a/a2.in"),
+		filepath.Join(Out, "a/a3.in"),
+		filepath.Join(Out, "a/b/b1.in"),
+		filepath.Join(Out, "a/b/b2.in"),
+		filepath.Join(Out, "a/b/b3.in"),
+		filepath.Join(Out, "a/b/c/c1.in"),
+		filepath.Join(Out, "a/b/c/c2.in"),
+		filepath.Join(Out, "a/b/c/c3.in"),
 	}
 }
 
@@ -1552,8 +1668,17 @@ func GetUploadExpectedRepo1SyncDeleteStep4() []string {
 	}
 }
 
-func GetReplicationConfig() []clientutils.ReplicationParams {
-	return []clientutils.ReplicationParams{
+func GetExpectedUploadSummaryDetails(RtUrl string) []clientutils.FileTransferDetails {
+	path1, path2, path3 := filepath.Join("testdata", "a", "a1.in"), filepath.Join("testdata", "a", "a2.in"), filepath.Join("testdata", "a", "a3.in")
+	return []clientutils.FileTransferDetails{
+		{SourcePath: path1, TargetPath: RtUrl + RtRepo1 + "/testdata/a/a1.in", Sha256: "4eb341b5d2762a853d79cc25e622aa8b978eb6e12c3259e2d99dc9dc60d82c5d"},
+		{SourcePath: path2, TargetPath: RtUrl + RtRepo1 + "/testdata/a/a2.in", Sha256: "3e3deb6628658a48cf0d280a2210211f9d977ec2e10a4619b95d5fb85cb10450"},
+		{SourcePath: path3, TargetPath: RtUrl + RtRepo1 + "/testdata/a/a3.in", Sha256: "14e3dc4749bf42df13a67a271065b0f334d0ad36bb34a74cc57c6e137f9af09e"},
+	}
+}
+
+func GetReplicationConfig() []servicesutils.ReplicationParams {
+	return []servicesutils.ReplicationParams{
 		{
 			Url:                    *RtUrl + "targetRepo",
 			Username:               "admin",
@@ -1566,6 +1691,22 @@ func GetReplicationConfig() []clientutils.ReplicationParams {
 			SyncProperties:         true,
 			SyncStatistics:         false,
 			PathPrefix:             "/my/path",
+		},
+	}
+}
+
+func GetExpectedPermissionTarget(repoValue string) services.PermissionTargetParams {
+	return services.PermissionTargetParams{
+		Name: RtPermissionTargetName,
+		Repo: &services.PermissionTargetSection{
+			Repositories:    []string{repoValue},
+			IncludePatterns: []string{"**"},
+			ExcludePatterns: []string{},
+			Actions: &services.Actions{
+				Groups: map[string][]string{
+					"readers": {"read"},
+				},
+			},
 		},
 	}
 }

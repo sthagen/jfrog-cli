@@ -2,12 +2,14 @@ package main
 
 import (
 	"flag"
-	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
-	"github.com/jfrog/jfrog-cli-core/utils/log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/jfrog/jfrog-cli-core/common/commands"
+	"github.com/jfrog/jfrog-cli-core/utils/coreutils"
+	"github.com/jfrog/jfrog-cli-core/utils/log"
 
 	commandUtils "github.com/jfrog/jfrog-cli-core/artifactory/commands/utils"
 	artifactoryUtils "github.com/jfrog/jfrog-cli-core/artifactory/utils"
@@ -47,6 +49,9 @@ func setupIntegrationTests() {
 	if *tests.TestDistribution {
 		InitDistributionTests()
 	}
+	if *tests.TestPlugins {
+		InitPluginsTests()
+	}
 }
 
 func tearDownIntegrationTests() {
@@ -61,6 +66,9 @@ func tearDownIntegrationTests() {
 	}
 	if *tests.TestDistribution {
 		CleanDistributionTests()
+	}
+	if *tests.TestPlugins {
+		CleanPluginsTests()
 	}
 }
 
@@ -89,7 +97,12 @@ func createJfrogHomeConfig(t *testing.T, encryptPassword bool) {
 	} else {
 		credentials = "--user=" + *tests.RtUser + " --password=" + *tests.RtPassword
 	}
-	err = tests.NewJfrogCli(execMain, "jfrog rt", credentials).Exec("c", "default", "--interactive=false", "--url="+*tests.RtUrl, "--enc-password="+strconv.FormatBool(encryptPassword))
+	// Delete the default server if exist
+	config, err := commands.GetConfig("default", false)
+	if err == nil && config.ServerId != "" {
+		err = tests.NewJfrogCli(execMain, "jfrog config", "").Exec("rm", "default", "--quiet")
+	}
+	err = tests.NewJfrogCli(execMain, "jfrog config", credentials).Exec("add", "default", "--interactive=false", "--artifactory-url="+*tests.RtUrl, "--enc-password="+strconv.FormatBool(encryptPassword))
 	assert.NoError(t, err)
 }
 
@@ -109,7 +122,7 @@ func cleanBuildToolsTest() {
 	}
 }
 
-func validateBuildInfo(buildInfo buildinfo.BuildInfo, t *testing.T, expectedDependencies int, expectedArtifacts int, moduleName string) {
+func validateBuildInfo(buildInfo buildinfo.BuildInfo, t *testing.T, expectedDependencies int, expectedArtifacts int, moduleName string, moduleType buildinfo.ModuleType) {
 	if buildInfo.Modules == nil || len(buildInfo.Modules) == 0 {
 		assert.Fail(t, "build info was not generated correctly, no modules were created.")
 		return
@@ -117,6 +130,7 @@ func validateBuildInfo(buildInfo buildinfo.BuildInfo, t *testing.T, expectedDepe
 	assert.Equal(t, moduleName, buildInfo.Modules[0].Id, "Unexpected module name")
 	assert.Len(t, buildInfo.Modules[0].Dependencies, expectedDependencies, "Incorrect number of dependencies found in the build-info")
 	assert.Len(t, buildInfo.Modules[0].Artifacts, expectedArtifacts, "Incorrect number of artifacts found in the build-info")
+	assert.Equal(t, buildInfo.Modules[0].Type, moduleType)
 }
 
 func initArtifactoryCli() {
@@ -124,10 +138,9 @@ func initArtifactoryCli() {
 		return
 	}
 	*tests.RtUrl = utils.AddTrailingSlashIfNeeded(*tests.RtUrl)
-	cred := authenticate()
-	artifactoryCli = tests.NewJfrogCli(execMain, "jfrog rt", cred)
-	if *tests.TestArtifactory && !*tests.TestArtifactoryProxy {
-		configArtifactoryCli = createConfigJfrogCLI(cred)
+	artifactoryCli = tests.NewJfrogCli(execMain, "jfrog rt", authenticate(false))
+	if (*tests.TestArtifactory && !*tests.TestArtifactoryProxy) || *tests.TestPlugins {
+		configCli = createConfigJfrogCLI(authenticate(true))
 	}
 }
 

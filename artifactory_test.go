@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jfrog/jfrog-cli-core/common/commands"
+	"github.com/jfrog/jfrog-client-go/artifactory"
 	"io"
 	"io/ioutil"
 	"net"
@@ -17,6 +19,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -54,9 +57,9 @@ import (
 var artifactoryCli *tests.JfrogCli
 
 // JFrog CLI for config command only (doesn't pass the --ssh-passphrase flag)
-var configArtifactoryCli *tests.JfrogCli
+var configCli *tests.JfrogCli
 
-var artifactoryDetails *config.ArtifactoryDetails
+var serverDetails *config.ServerDetails
 var artAuth auth.ServiceDetails
 var artHttpDetails httputils.HttpClientDetails
 
@@ -64,31 +67,37 @@ func InitArtifactoryTests() {
 	initArtifactoryCli()
 	cleanUpOldBuilds()
 	cleanUpOldRepositories()
+	cleanUpOldUsers()
 	tests.AddTimestampToGlobalVars()
 	createRequiredRepos()
 	cleanArtifactoryTest()
 }
 
-func authenticate() string {
-	artifactoryDetails = &config.ArtifactoryDetails{Url: clientutils.AddTrailingSlashIfNeeded(*tests.RtUrl), SshKeyPath: *tests.RtSshKeyPath, SshPassphrase: *tests.RtSshPassphrase}
-	cred := "--url=" + *tests.RtUrl
-	if !fileutils.IsSshUrl(artifactoryDetails.Url) {
+func authenticate(configCli bool) string {
+	serverDetails = &config.ServerDetails{ArtifactoryUrl: clientutils.AddTrailingSlashIfNeeded(*tests.RtUrl), SshKeyPath: *tests.RtSshKeyPath, SshPassphrase: *tests.RtSshPassphrase}
+	var cred string
+	if configCli {
+		cred += "--artifactory-url=" + *tests.RtUrl
+	} else {
+		cred += "--url=" + *tests.RtUrl
+	}
+	if !fileutils.IsSshUrl(serverDetails.ArtifactoryUrl) {
 		if *tests.RtApiKey != "" {
-			artifactoryDetails.ApiKey = *tests.RtApiKey
+			serverDetails.ApiKey = *tests.RtApiKey
 		} else if *tests.RtAccessToken != "" {
-			artifactoryDetails.AccessToken = *tests.RtAccessToken
+			serverDetails.AccessToken = *tests.RtAccessToken
 		} else {
-			artifactoryDetails.User = *tests.RtUser
-			artifactoryDetails.Password = *tests.RtPassword
+			serverDetails.User = *tests.RtUser
+			serverDetails.Password = *tests.RtPassword
 		}
 	}
 	cred += getArtifactoryTestCredentials()
 	var err error
-	if artAuth, err = artifactoryDetails.CreateArtAuthConfig(); err != nil {
+	if artAuth, err = serverDetails.CreateArtAuthConfig(); err != nil {
 		coreutils.ExitOnErr(errors.New("Failed while attempting to authenticate with Artifactory: " + err.Error()))
 	}
-	artifactoryDetails.Url = artAuth.GetUrl()
-	artifactoryDetails.SshUrl = artAuth.GetSshUrl()
+	serverDetails.ArtifactoryUrl = artAuth.GetUrl()
+	serverDetails.SshUrl = artAuth.GetSshUrl()
 	artHttpDetails = artAuth.CreateHttpClientDetails()
 	return cred
 }
@@ -99,11 +108,11 @@ func createConfigJfrogCLI(cred string) *tests.JfrogCli {
 	if strings.Contains(cred, " --ssh-passphrase=") {
 		cred = strings.Replace(cred, " --ssh-passphrase="+*tests.RtSshPassphrase, "", -1)
 	}
-	return tests.NewJfrogCli(execMain, "jfrog rt", cred)
+	return tests.NewJfrogCli(execMain, "jfrog config", cred)
 }
 
 func getArtifactoryTestCredentials() string {
-	if fileutils.IsSshUrl(artifactoryDetails.Url) {
+	if fileutils.IsSshUrl(serverDetails.ArtifactoryUrl) {
 		return getSshCredentials()
 	}
 	if *tests.RtApiKey != "" {
@@ -155,8 +164,9 @@ func TestArtifactorySimpleUploadWithWildcardSpec(t *testing.T) {
 // This test is similar to TestArtifactorySimpleUploadSpec but using "--server-id" flag
 func TestArtifactorySimpleUploadSpecUsingConfig(t *testing.T) {
 	initArtifactoryTest(t)
-	passphrase := createServerConfigAndReturnPassphrase()
+	passphrase, err := createServerConfigAndReturnPassphrase()
 	defer deleteServerConfig()
+	assert.NoError(t, err)
 	artifactoryCommandExecutor := tests.NewJfrogCli(execMain, "jfrog rt", "")
 	specFile, err := tests.CreateSpec(tests.UploadFlatRecursive)
 	assert.NoError(t, err)
@@ -182,7 +192,7 @@ func TestArtifactoryUploadPathWithSpecialCharsAsNoRegex(t *testing.T) {
 
 func TestArtifactoryEmptyBuild(t *testing.T) {
 	initArtifactoryTest(t)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	buildNumber := "5"
 
 	// Try to upload with non existent pattern
@@ -197,7 +207,7 @@ func TestArtifactoryEmptyBuild(t *testing.T) {
 	err = artifactoryCli.Exec("build-publish", tests.RtBuildName1, buildNumber)
 	assert.NoError(t, err)
 
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -368,37 +378,48 @@ func TestAqlFindingItemOnRoot(t *testing.T) {
 func TestExitCode(t *testing.T) {
 	initArtifactoryTest(t)
 
+	// Upload dummy file in order to test move and copy commands
+	artifactoryCli.Exec("upload", path.Join("testdata", "a", "a1.in"), tests.RtRepo1)
+
+	// Discard output logging to prevent negative logs
+	previousLogger := tests.RedirectLogOutputToNil()
+	defer log.SetLogger(previousLogger)
+
+	// Test upload commands
 	err := artifactoryCli.Exec("upload", "DummyText", tests.RtRepo1, "--fail-no-op=true")
 	checkExitCode(t, coreutils.ExitCodeError, err)
-	err = artifactoryCli.Exec("upload", path.Join("testdata", "a", "a1.in"), "tests.Repo1")
+	err = artifactoryCli.Exec("upload", path.Join("testdata", "a", "a1.in"), "DummyTargetPath")
 	checkExitCode(t, coreutils.ExitCodeError, err)
 	err = artifactoryCli.Exec("upload", "testdata/a/(*.dummyExt)", tests.RtRepo1+"/{1}.in", "--fail-no-op=true")
 	checkExitCode(t, coreutils.ExitCodeFailNoOp, err)
 
+	// Test download command
 	err = artifactoryCli.Exec("dl", "DummyFolder", "--fail-no-op=true")
 	checkExitCode(t, coreutils.ExitCodeFailNoOp, err)
 
-	//upload dummy file inorder to test move & copy
-	artifactoryCli.Exec("upload", path.Join("testdata", "a", "a1.in"), tests.RtRepo1)
+	// Test move commands
 	err = artifactoryCli.Exec("move", tests.RtRepo1, "DummyTargetPath")
 	checkExitCode(t, coreutils.ExitCodeError, err)
 	err = artifactoryCli.Exec("move", "DummyText", tests.RtRepo1, "--fail-no-op=true")
 	checkExitCode(t, coreutils.ExitCodeFailNoOp, err)
 
+	// Test copy commands
 	err = artifactoryCli.Exec("copy", tests.RtRepo1, "DummyTargetPath")
 	checkExitCode(t, coreutils.ExitCodeError, err)
 	err = artifactoryCli.Exec("copy", "DummyText", tests.RtRepo1, "--fail-no-op=true")
 	checkExitCode(t, coreutils.ExitCodeFailNoOp, err)
 
+	// Test delete command
 	err = artifactoryCli.Exec("delete", "DummyText", "--fail-no-op=true")
 	checkExitCode(t, coreutils.ExitCodeFailNoOp, err)
 
+	// Test search command
 	err = artifactoryCli.Exec("s", "DummyText", "--fail-no-op=true")
 	checkExitCode(t, coreutils.ExitCodeFailNoOp, err)
 
+	// Test props commands
 	err = artifactoryCli.Exec("sp", "DummyText", "prop=val;key=value", "--fail-no-op=true")
 	checkExitCode(t, coreutils.ExitCodeFailNoOp, err)
-
 	err = artifactoryCli.Exec("delp", "DummyText", "prop=val;key=value", "--fail-no-op=true")
 	checkExitCode(t, coreutils.ExitCodeFailNoOp, err)
 
@@ -473,6 +494,7 @@ func TestArtifactoryCreateUsers(t *testing.T) {
 	defer func() {
 		err = artifactoryCli.Exec("users-delete", "--csv="+randomUsersCSVPath)
 		assert.NoError(t, err)
+		cleanArtifactoryTest()
 	}()
 	assert.NoError(t, err)
 
@@ -493,7 +515,7 @@ func verifyUsersExistInArtifactory(csvFilePath string, t *testing.T) {
 			break
 		}
 		user, password := record[0], record[1]
-		err = tests.NewJfrogCli(execMain, "jfrog rt", "--url="+artifactoryDetails.Url+" --user="+user+" --password="+password).Exec("ping")
+		err = tests.NewJfrogCli(execMain, "jfrog rt", "--url="+serverDetails.ArtifactoryUrl+" --user="+user+" --password="+password).Exec("ping")
 		assert.NoError(t, err)
 	}
 
@@ -670,6 +692,10 @@ func getSpecialCharFilePath() string {
 	return "testdata/a$+~&^a#/a*"
 }
 
+func getAntPatternFilePath() string {
+	return "testdata/cache/downloa?/**/*.in"
+}
+
 func TestArtifactoryCopyNoSpec(t *testing.T) {
 	testCopyMoveNoSpec("cp", tests.GetBuildBeforeCopyExpected(), tests.GetBuildCopyExpected(), t)
 }
@@ -773,6 +799,7 @@ func TestArtifactoryDownloadAndExplode(t *testing.T) {
 	initArtifactoryTest(t)
 	err := fileutils.CreateDirIfNotExist(tests.Out)
 	assert.NoError(t, err)
+
 	randFile, err := gofrogio.CreateRandFile(filepath.Join(tests.Out, "randFile"), 100000)
 	assert.NoError(t, err)
 
@@ -789,33 +816,29 @@ func TestArtifactoryDownloadAndExplode(t *testing.T) {
 	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/concurrent", "--explode=true"))
 	// Download 'concurrent.tar.gz' and explode it.
 	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=true"))
-	// Download 'concurrent.tar.gz' withour explode it.
+	// Download 'concurrent.tar.gz' without explode it.
 	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=false"))
 	// Try to explode the archive that already been downloaded.
 	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=true"))
 	os.RemoveAll(tests.Out)
 	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "randFile"), tests.Out+"/", "--explode=true"))
-	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=false", "--min-split=50"))
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "concurrent.tar.gz"), tests.Out+"/", "--explode=false"))
 	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "bulk.tar"), tests.Out+"/", "--explode=true"))
-	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "zipFile.zip"), tests.Out+"/", "--explode=true", "--min-split=50"))
 	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "zipFile.zip"), tests.Out+"/", "--explode=true"))
-
-	paths, err := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
-	assert.NoError(t, err)
-	tests.VerifyExistLocally(tests.GetExtractedDownload(), paths, t)
+	verifyExistAndCleanDir(t, tests.GetExtractedDownload)
 
 	cleanArtifactoryTest()
 }
 
-func TestArtifactoryDownloadAndExplodeDotAsTarget(t *testing.T) {
+func TestArtifactoryDownloadAndExplodeCurDirAsTarget(t *testing.T) {
 	initArtifactoryTest(t)
-
 	err := fileutils.CreateDirIfNotExist(tests.Out)
 	assert.NoError(t, err)
-	randFile, err := gofrogio.CreateRandFile(filepath.Join(tests.Out, "DownloadAndExplodeDotAsTarget"), 100000)
+
+	randFile, err := gofrogio.CreateRandFile(filepath.Join(tests.Out, "DownloadAndExplodeCurDirTarget"), 100000)
 	assert.NoError(t, err)
 
-	err = archiver.TarGz.Make(filepath.Join(tests.Out, "concurrent.tar.gz"), []string{randFile.Name()})
+	err = archiver.TarGz.Make(filepath.Join(tests.Out, "curDir.tar.gz"), []string{randFile.Name()})
 	assert.NoError(t, err)
 
 	artifactoryCli.Exec("upload", tests.Out+"/*", tests.RtRepo1, "--flat=true")
@@ -823,17 +846,169 @@ func TestArtifactoryDownloadAndExplodeDotAsTarget(t *testing.T) {
 	randFile.File.Close()
 	os.RemoveAll(tests.Out)
 
+	// Change working dir to tests temp "out" dir
 	assert.NoError(t, fileutils.CreateDirIfNotExist(tests.Out))
 	wd, err := os.Getwd()
 	assert.NoError(t, err)
 	assert.NoError(t, os.Chdir(tests.Out))
-	assert.NoError(t, artifactoryCli.Exec("download", tests.RtRepo1+"/p-modules/concurrent.tar.gz", ".", "--explode=true"))
-	assert.NoError(t, os.Chdir(wd))
 
+	// Dot as target
+	assert.NoError(t, artifactoryCli.Exec("download", tests.RtRepo1+"/p-modules/curDir.tar.gz", ".", "--explode=true"))
+	// Changing current working dir to "out" dir
+	assert.NoError(t, os.Chdir(wd))
+	verifyExistAndCleanDir(t, tests.GetExtractedDownloadCurDir)
+	assert.NoError(t, os.Chdir(tests.Out))
+
+	// No target
+	assert.NoError(t, artifactoryCli.Exec("download", tests.RtRepo1+"/p-modules/curDir.tar.gz", "--explode=true"))
+	// Changing working dir for testing
+	assert.NoError(t, os.Chdir(wd))
+	verifyExistAndCleanDir(t, tests.GetExtractedDownloadCurDir)
+	assert.NoError(t, os.Chdir(tests.Out))
+
+	assert.NoError(t, os.Chdir(wd))
+	cleanArtifactoryTest()
+}
+
+func TestArtifactoryDownloadAndExplodeFlat(t *testing.T) {
+	initArtifactoryTest(t)
+	err := fileutils.CreateDirIfNotExist(tests.Out)
+	assert.NoError(t, err)
+
+	file1, err := gofrogio.CreateRandFile(filepath.Join(tests.Out, "file1"), 100000)
+	assert.NoError(t, err)
+
+	err = archiver.Tar.Make(filepath.Join(tests.Out, "flat.tar"), []string{file1.Name()})
+	assert.NoError(t, err)
+	err = archiver.Zip.Make(filepath.Join(tests.Out, "tarZipFile.zip"), []string{tests.Out + "/flat.tar"})
+	assert.NoError(t, err)
+
+	artifactoryCli.Exec("upload", tests.Out+"/*", tests.RtRepo1+"/checkFlat/dir/")
+	file1.File.Close()
+	os.RemoveAll(tests.Out)
+	assert.NoError(t, fileutils.CreateDirIfNotExist(tests.Out))
+
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "checkFlat", "dir", "flat.tar"), tests.Out+"/checkFlat/", "--explode=true", "--flat=true", "--min-split=50"))
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "checkFlat", "dir", "tarZipFile.zip"), tests.Out+"/", "--explode=true", "--flat=false"))
+	verifyExistAndCleanDir(t, tests.GetExtractedDownloadFlatFalse)
+	// Explode 'flat.tar' while the file exists in the file system using --flat
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "checkFlat", "dir", "tarZipFile.zip"), tests.Out+"/", "--explode=true", "--flat=false"))
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "checkFlat", "dir", "flat.tar"), tests.Out+"/checkFlat/dir/", "--explode=true", "--flat", "--min-split=50"))
+	verifyExistAndCleanDir(t, tests.GetExtractedDownloadTarFileFlatFalse)
+
+	cleanArtifactoryTest()
+}
+
+func TestArtifactoryDownloadAndExplodeConcurrent(t *testing.T) {
+	initArtifactoryTest(t)
+	err := fileutils.CreateDirIfNotExist(tests.Out)
+	assert.NoError(t, err)
+
+	artifactoryCli.Exec("upload", path.Join("testdata", "archives", "a.zip"), tests.RtRepo1, "--flat=true")
+	assert.NoError(t, fileutils.CreateDirIfNotExist(tests.Out))
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "a.zip"), tests.Out+"/", "--explode=true", "--min-split=50"))
+	verifyExistAndCleanDir(t, tests.GetExtractedDownloadConcurrent)
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "a.zip"), tests.Out+"/", "--explode=false", "--min-split=50"))
+	verifyExistAndCleanDir(t, tests.GetArchiveConcurrent)
+	assert.NoError(t, artifactoryCli.Exec("download", path.Join(tests.RtRepo1, "a.zip"), tests.Out+"/", "--explode=true", "--split-count=15", "--min-split=50"))
+	verifyExistAndCleanDir(t, tests.GetExtractedDownloadConcurrent)
+
+	cleanArtifactoryTest()
+}
+
+func TestArtifactoryDownloadAndExplodeSpecialChars(t *testing.T) {
+	initArtifactoryTest(t)
+	err := fileutils.CreateDirIfNotExist(tests.Out)
+	assert.NoError(t, err)
+	file1, err := gofrogio.CreateRandFile(filepath.Join(tests.Out, "file $+~&^a#1"), 1000)
+	assert.NoError(t, err)
+	err = archiver.Tar.Make(filepath.Join(tests.Out, "a$+~&^a#.tar"), []string{file1.Name()})
+	assert.NoError(t, err)
+
+	artifactoryCli.Exec("upload", tests.Out+"/*", tests.RtRepo1+"/dir/", "--flat=true")
+	os.RemoveAll(tests.Out)
+	err = fileutils.CreateDirIfNotExist(tests.Out)
+	assert.NoError(t, err)
+	artifactoryCli.Exec("dl", tests.RtRepo1+"/dir/a$+~&^a#.tar", tests.Out+"/dir $+~&^a# test/", "--flat=true", "--explode")
+	artifactoryCli.Exec("dl", tests.RtRepo1+"/dir/a$+~&^a#.tar", tests.Out+"/dir $+~&^a# test/", "--flat=false", "--explode")
+	verifyExistAndCleanDir(t, tests.GetExtractedDownloadTarFileSpecialChars)
+	// Concurrently download
+	artifactoryCli.Exec("dl", tests.RtRepo1+"/dir/a$+~&^a#.tar", tests.Out+"/dir $+~&^a# test/", "--flat=true", "--explode", "--min-split=50")
+	artifactoryCli.Exec("dl", tests.RtRepo1+"/dir/a$+~&^a#.tar", tests.Out+"/dir $+~&^a# test/", "--flat=false", "--explode", "--min-split=50")
+	verifyExistAndCleanDir(t, tests.GetExtractedDownloadTarFileSpecialChars)
+	cleanArtifactoryTest()
+}
+
+func verifyExistAndCleanDir(t *testing.T, GetExtractedDownload func() []string) {
 	paths, err := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
 	assert.NoError(t, err)
-	tests.VerifyExistLocally([]string{tests.Out, filepath.Join(tests.Out, "p-modules"), filepath.Join(tests.Out, "p-modules", "DownloadAndExplodeDotAsTarget")}, paths, t)
+	tests.VerifyExistLocally(GetExtractedDownload(), paths, t)
 	os.RemoveAll(tests.Out)
+	assert.NoError(t, fileutils.CreateDirIfNotExist(tests.Out))
+}
+
+func TestArtifactoryUploadAsArchive(t *testing.T) {
+	initArtifactoryTest(t)
+
+	uploadSpecFile, err := tests.CreateSpec(tests.UploadAsArchive)
+	assert.NoError(t, err)
+	artifactoryCli.Exec("upload", "--spec="+uploadSpecFile)
+	searchFilePath, err := tests.CreateSpec(tests.SearchAllRepo1)
+	verifyExistInArtifactory(tests.GetUploadAsArchive(), searchFilePath, t)
+
+	// Verify the properties are valid
+	resultItems := searchItemsInArtifactory(t, tests.SearchAllRepo1)
+	assert.NotZero(t, len(resultItems))
+	for _, item := range resultItems {
+		if item.Name != "a.zip" {
+			assert.Zero(t, len(item.Properties))
+			continue
+		}
+		properties := item.Properties
+		assert.Equal(t, 3, len(properties))
+
+		// Sort the properties alphabetically by key and value to make the comparison easier
+		sort.Slice(properties, func(i, j int) bool {
+			if properties[i].Key == properties[j].Key {
+				return properties[i].Value < properties[j].Value
+			}
+			return properties[i].Key < properties[j].Key
+		})
+		assert.Contains(t, properties, rtutils.Property{Key: "k1", Value: "v11"})
+		assert.Contains(t, properties, rtutils.Property{Key: "k1", Value: "v12"})
+		assert.Contains(t, properties, rtutils.Property{Key: "k2", Value: "v2"})
+	}
+
+	// Check the files inside the archives by downloading and exploding them
+	downloadSpecFile, err := tests.CreateSpec(tests.DownloadAndExplodeArchives)
+	assert.NoError(t, err)
+	artifactoryCli.Exec("download", "--spec="+downloadSpecFile)
+	paths, err := fileutils.ListFilesRecursiveWalkIntoDirSymlink(tests.Out, false)
+	assert.NoError(t, err)
+	tests.VerifyExistLocally(tests.GetDownloadArchiveAndExplode(), paths, t)
+
+	cleanArtifactoryTest()
+}
+
+func TestArtifactoryUploadAsArchiveAndSymlinks(t *testing.T) {
+	initArtifactoryTest(t)
+
+	uploadSpecFile, err := tests.CreateSpec(tests.UploadAsArchive)
+	assert.NoError(t, err)
+	err = artifactoryCli.Exec("upload", "--spec="+uploadSpecFile, "--symlinks")
+	assert.Error(t, err)
+
+	cleanArtifactoryTest()
+}
+
+func TestArtifactoryUploadAsArchiveToDir(t *testing.T) {
+	initArtifactoryTest(t)
+
+	uploadSpecFile, err := tests.CreateSpec(tests.UploadAsArchiveToDir)
+	assert.NoError(t, err)
+	err = artifactoryCli.Exec("upload", "--spec="+uploadSpecFile)
+	assert.Error(t, err)
+
 	cleanArtifactoryTest()
 }
 
@@ -930,7 +1105,7 @@ func TestArtifactorySelfSignedCert(t *testing.T) {
 	defer fileutils.RemoveTempDir(tempDirPath)
 	os.Setenv(coreutils.HomeDir, tempDirPath)
 	os.Setenv(tests.HttpsProxyEnvVar, "1024")
-	go cliproxy.StartLocalReverseHttpProxy(artifactoryDetails.Url, false)
+	go cliproxy.StartLocalReverseHttpProxy(serverDetails.ArtifactoryUrl, false)
 
 	// The two certificate files are created by the reverse proxy on startup in the current directory.
 	defer os.Remove(certificate.KEY_FILE)
@@ -941,13 +1116,13 @@ func TestArtifactorySelfSignedCert(t *testing.T) {
 
 	fileSpec := spec.NewBuilder().Pattern(tests.RtRepo1 + "/*.zip").Recursive(true).BuildSpec()
 	assert.NoError(t, err)
-	parsedUrl, err := url.Parse(artifactoryDetails.Url)
-	artifactoryDetails.Url = "https://127.0.0.1:" + cliproxy.GetProxyHttpsPort() + parsedUrl.RequestURI()
+	parsedUrl, err := url.Parse(serverDetails.ArtifactoryUrl)
+	serverDetails.ArtifactoryUrl = "https://127.0.0.1:" + cliproxy.GetProxyHttpsPort() + parsedUrl.RequestURI()
 
 	// The server is using self-signed certificates
 	// Without loading the certificates (or skipping verification) we expect all actions to fail due to error: "x509: certificate signed by unknown authority"
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails).SetSpec(fileSpec)
+	searchCmd.SetServerDetails(serverDetails).SetSpec(fileSpec)
 	reader, err := searchCmd.Search()
 	if reader != nil {
 		assert.NoError(t, reader.Close())
@@ -956,16 +1131,16 @@ func TestArtifactorySelfSignedCert(t *testing.T) {
 	assert.True(t, isUrlErr, "Expected a connection failure, since reverse proxy didn't load self-signed-certs. Connection however is successful", err)
 
 	// Set insecureTls to true and run again. We expect the command to succeed.
-	artifactoryDetails.InsecureTls = true
+	serverDetails.InsecureTls = true
 	searchCmd = generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails).SetSpec(fileSpec)
+	searchCmd.SetServerDetails(serverDetails).SetSpec(fileSpec)
 	reader, err = searchCmd.Search()
 	assert.NoError(t, err)
 	assert.NoError(t, reader.Close())
 
 	// Set insecureTls back to false.
 	// Copy the server certificates to the CLI security dir and run again. We expect the command to succeed.
-	artifactoryDetails.InsecureTls = false
+	serverDetails.InsecureTls = false
 	certsPath, err := coreutils.GetJfrogCertsDir()
 	assert.NoError(t, err)
 	err = fileutils.CopyFile(certsPath, certificate.KEY_FILE)
@@ -973,12 +1148,12 @@ func TestArtifactorySelfSignedCert(t *testing.T) {
 	err = fileutils.CopyFile(certsPath, certificate.CERT_FILE)
 	assert.NoError(t, err)
 	searchCmd = generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails).SetSpec(fileSpec)
+	searchCmd.SetServerDetails(serverDetails).SetSpec(fileSpec)
 	reader, err = searchCmd.Search()
 	assert.NoError(t, err)
 	assert.NoError(t, reader.Close())
 
-	artifactoryDetails.Url = artAuth.GetUrl()
+	serverDetails.ArtifactoryUrl = artAuth.GetUrl()
 	cleanArtifactoryTest()
 }
 
@@ -991,7 +1166,7 @@ func TestArtifactoryClientCert(t *testing.T) {
 	defer fileutils.RemoveTempDir(tempDirPath)
 	os.Setenv(coreutils.HomeDir, tempDirPath)
 	os.Setenv(tests.HttpsProxyEnvVar, "1025")
-	go cliproxy.StartLocalReverseHttpProxy(artifactoryDetails.Url, true)
+	go cliproxy.StartLocalReverseHttpProxy(serverDetails.ArtifactoryUrl, true)
 
 	// The two certificate files are created by the reverse proxy on startup in the current directory.
 	defer os.Remove(certificate.KEY_FILE)
@@ -1002,14 +1177,14 @@ func TestArtifactoryClientCert(t *testing.T) {
 
 	fileSpec := spec.NewBuilder().Pattern(tests.RtRepo1 + "/*.zip").Recursive(true).BuildSpec()
 	assert.NoError(t, err)
-	parsedUrl, err := url.Parse(artifactoryDetails.Url)
-	artifactoryDetails.Url = "https://127.0.0.1:" + cliproxy.GetProxyHttpsPort() + parsedUrl.RequestURI()
-	artifactoryDetails.InsecureTls = true
+	parsedUrl, err := url.Parse(serverDetails.ArtifactoryUrl)
+	serverDetails.ArtifactoryUrl = "https://127.0.0.1:" + cliproxy.GetProxyHttpsPort() + parsedUrl.RequestURI()
+	serverDetails.InsecureTls = true
 
 	// The server is requiring client certificates
 	// Without loading a valid client certificate, we expect all actions to fail due to error: "tls: bad certificate"
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails).SetSpec(fileSpec)
+	searchCmd.SetServerDetails(serverDetails).SetSpec(fileSpec)
 	reader, err := searchCmd.Search()
 	if reader != nil {
 		assert.NoError(t, reader.Close())
@@ -1018,21 +1193,21 @@ func TestArtifactoryClientCert(t *testing.T) {
 	assert.True(t, isUrlErr, "Expected a connection failure, since client did not provide a client certificate. Connection however is successful")
 
 	// Inject client certificates, we expect the search to succeed
-	artifactoryDetails.ClientCertPath = certificate.CERT_FILE
-	artifactoryDetails.ClientCertKeyPath = certificate.KEY_FILE
+	serverDetails.ClientCertPath = certificate.CERT_FILE
+	serverDetails.ClientCertKeyPath = certificate.KEY_FILE
 
 	searchCmd = generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails).SetSpec(fileSpec)
+	searchCmd.SetServerDetails(serverDetails).SetSpec(fileSpec)
 	reader, err = searchCmd.Search()
 	if reader != nil {
 		assert.NoError(t, reader.Close())
 	}
 	assert.NoError(t, err)
 
-	artifactoryDetails.Url = artAuth.GetUrl()
-	artifactoryDetails.InsecureTls = false
-	artifactoryDetails.ClientCertPath = ""
-	artifactoryDetails.ClientCertKeyPath = ""
+	serverDetails.ArtifactoryUrl = artAuth.GetUrl()
+	serverDetails.InsecureTls = false
+	serverDetails.ClientCertPath = ""
+	serverDetails.ClientCertKeyPath = ""
 	cleanArtifactoryTest()
 }
 
@@ -1079,7 +1254,7 @@ func getExternalIP() (string, error) {
 // We decide which var to set by the rtUrl scheme.
 func TestArtifactoryProxy(t *testing.T) {
 	initArtifactoryTest(t)
-	rtUrl, err := url.Parse(artifactoryDetails.Url)
+	rtUrl, err := url.Parse(serverDetails.ArtifactoryUrl)
 	assert.NoError(t, err)
 	var proxyTestArgs []string
 	var httpProxyEnv string
@@ -1125,10 +1300,10 @@ func testArtifactoryProxy(t *testing.T, isHttps bool) {
 	if !*tests.TestArtifactoryProxy {
 		t.SkipNow()
 	}
-	authenticate()
+	authenticate(true)
 	proxyRtUrl := prepareArtifactoryUrlForProxyTest(t)
 	spec := spec.NewBuilder().Pattern(tests.RtRepo1 + "/*.zip").Recursive(true).BuildSpec()
-	artifactoryDetails.Url = proxyRtUrl
+	serverDetails.ArtifactoryUrl = proxyRtUrl
 	checkForErrDueToMissingProxy(spec, t)
 	var port string
 	if isHttps {
@@ -1142,17 +1317,17 @@ func testArtifactoryProxy(t *testing.T, isHttps bool) {
 	err := checkIfServerIsUp(port, "http", false)
 	assert.NoError(t, err)
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails).SetSpec(spec)
+	searchCmd.SetServerDetails(serverDetails).SetSpec(spec)
 	reader, err := searchCmd.Search()
 	assert.NoError(t, err)
 	if reader != nil {
 		assert.NoError(t, reader.Close())
 	}
-	artifactoryDetails.Url = artAuth.GetUrl()
+	serverDetails.ArtifactoryUrl = artAuth.GetUrl()
 }
 
 func prepareArtifactoryUrlForProxyTest(t *testing.T) string {
-	rtUrl, err := url.Parse(artifactoryDetails.Url)
+	rtUrl, err := url.Parse(serverDetails.ArtifactoryUrl)
 	assert.NoError(t, err)
 	rtHost, port, err := net.SplitHostPort(rtUrl.Host)
 	if rtHost == "localhost" || rtHost == "127.0.0.1" {
@@ -1165,7 +1340,7 @@ func prepareArtifactoryUrlForProxyTest(t *testing.T) string {
 
 func checkForErrDueToMissingProxy(spec *spec.SpecFiles, t *testing.T) {
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails).SetSpec(spec)
+	searchCmd.SetServerDetails(serverDetails).SetSpec(spec)
 	reader, err := searchCmd.Search()
 	if reader != nil {
 		assert.NoError(t, reader.Close())
@@ -1852,7 +2027,7 @@ func testArtifactoryDeleteFoldersNoSpec(t *testing.T, contentOnly bool) {
 	} else {
 		expectedStatusCode = http.StatusNotFound
 	}
-	resp, body, _, err := client.SendGet(artifactoryDetails.Url+"api/storage/"+tests.RtRepo1+"/test_resources", true, artHttpDetails)
+	resp, body, _, err := client.SendGet(serverDetails.ArtifactoryUrl+"api/storage/"+tests.RtRepo1+"/test_resources", true, artHttpDetails, "")
 	assert.NoError(t, err)
 	assert.Equal(t, expectedStatusCode, resp.StatusCode, "test_resources shouldn't be deleted: "+tests.RtRepo1+"/test_resources/ "+string(body))
 
@@ -1997,7 +2172,7 @@ func TestArtifactoryDeletePrefixFiles(t *testing.T) {
 	// Prepare search command
 	searchSpecBuilder := spec.NewBuilder().Pattern(tests.RtRepo1).Recursive(true)
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails)
+	searchCmd.SetServerDetails(serverDetails)
 	searchCmd.SetSpec(searchSpecBuilder.BuildSpec())
 
 	// Upload files
@@ -2038,7 +2213,7 @@ func TestArtifactoryDeleteByProps(t *testing.T) {
 	// Prepare search command
 	searchSpecBuilder := spec.NewBuilder().Pattern(tests.RtRepo1).Recursive(true)
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails)
+	searchCmd.SetServerDetails(serverDetails)
 	searchCmd.SetSpec(searchSpecBuilder.BuildSpec())
 
 	// Delete all artifacts with D=5 but without c=3
@@ -2377,7 +2552,7 @@ func testChecksumDownload(t *testing.T, outFileName string) {
 func TestArtifactoryDownloadByPatternAndBuildUsingSpec(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.BuildDownloadSpec)
 	assert.NoError(t, err)
 	// Upload files with buildName and buildNumber
@@ -2401,14 +2576,14 @@ func TestArtifactoryDownloadByPatternAndBuildUsingSpec(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func TestArtifactoryGenericBuildnameAndNumberFromEnv(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.BuildDownloadSpec)
 	assert.NoError(t, err)
 	// Upload files with buildName and buildNumber
@@ -2439,14 +2614,14 @@ func TestArtifactoryGenericBuildnameAndNumberFromEnv(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func TestArtifactoryDownloadByBuildNoPatternUsingSpec(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.BuildDownloadSpecNoPattern)
 	assert.NoError(t, err)
 	// Upload files with buildName and buildNumber
@@ -2470,7 +2645,7 @@ func TestArtifactoryDownloadByBuildNoPatternUsingSpec(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -2478,7 +2653,7 @@ func prepareDownloadByBuildWithDependenciesTests(t *testing.T) {
 	// Init
 	initArtifactoryTest(t)
 	buildNumber := "1337"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 
 	// Upload files with buildName and buildNumber
 	specFileA, err := tests.CreateSpec(tests.SplitUploadSpecA)
@@ -2529,7 +2704,7 @@ func TestArtifactoryDownloadByBuildWithDependenciesSpecNoPattern(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -2558,7 +2733,7 @@ func TestArtifactoryDownloadByBuildWithDependencies(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -2567,7 +2742,7 @@ func TestArtifactoryDownloadByBuildWithDependencies(t *testing.T) {
 func TestArtifactoryDownloadArtifactDoesntExistInBuild(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumber := "10"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.BuildDownloadSpecNoBuildNumber)
 	assert.NoError(t, err)
 	// Upload a file
@@ -2584,7 +2759,7 @@ func TestArtifactoryDownloadArtifactDoesntExistInBuild(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -2593,8 +2768,8 @@ func TestArtifactoryDownloadArtifactDoesntExistInBuild(t *testing.T) {
 func TestArtifactoryDownloadByShaAndBuild(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB, buildNumberC := "10", "11", "12"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName2, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.BuildDownloadSpecNoBuildNumber)
 	assert.NoError(t, err)
 
@@ -2616,8 +2791,8 @@ func TestArtifactoryDownloadByShaAndBuild(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName2, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -2626,8 +2801,8 @@ func TestArtifactoryDownloadByShaAndBuild(t *testing.T) {
 func TestArtifactoryDownloadByShaAndBuildName(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB, buildNumberC := "10", "11", "12"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName2, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.BuildDownloadSpecNoBuildNumber)
 	assert.NoError(t, err)
 
@@ -2649,15 +2824,15 @@ func TestArtifactoryDownloadByShaAndBuildName(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName2, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func TestArtifactoryDownloadByBuildUsingSimpleDownload(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 
 	// Upload files with buildName and buildNumber
 	specFileA, err := tests.CreateSpec(tests.SplitUploadSpecA)
@@ -2681,14 +2856,14 @@ func TestArtifactoryDownloadByBuildUsingSimpleDownload(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func TestArtifactoryDownloadByBuildNoPatternUsingSimpleDownload(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 
 	// Upload files with buildName and buildNumber
 	specFileA, err := tests.CreateSpec(tests.SplitUploadSpecA)
@@ -2712,7 +2887,7 @@ func TestArtifactoryDownloadByBuildNoPatternUsingSimpleDownload(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -3003,8 +3178,8 @@ func validateSortLimitWithSymLink(localLinkPath, localFilePath string, t *testin
 func TestArtifactoryDownloadByShaAndBuildNameWithSort(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB, buildNumberC := "10", "11", "12"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName2, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.BuildDownloadSpecNoBuildNumberWithSort)
 	assert.NoError(t, err)
 	// Upload 3 similar files to 2 different builds
@@ -3025,15 +3200,15 @@ func TestArtifactoryDownloadByShaAndBuildNameWithSort(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName2, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName2, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func TestArtifactoryCopyByBuildUsingSpec(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.CopyByBuildSpec)
 	assert.NoError(t, err)
 	// Upload files with buildName and buildNumber: a* uploaded with build number "10", b* uploaded with build number "11"
@@ -3057,14 +3232,14 @@ func TestArtifactoryCopyByBuildUsingSpec(t *testing.T) {
 	verifyExistInArtifactory(tests.GetBuildCopyExpected(), cpMvDlByBuildAssertSpec, t)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func TestArtifactoryCopyByBuildPatternAllUsingSpec(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.CopyByBuildPatternAllSpec)
 	assert.NoError(t, err)
 	// Upload files with buildName and buildNumber: a* uploaded with build number "10", b* uploaded with build number "11"
@@ -3088,7 +3263,7 @@ func TestArtifactoryCopyByBuildPatternAllUsingSpec(t *testing.T) {
 	verifyExistInArtifactory(tests.GetBuildCopyExpected(), cpMvDlByBuildAssertSpec, t)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -3122,7 +3297,7 @@ func TestArtifactorySortByCreated(t *testing.T) {
 
 	// Prepare search command
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails)
+	searchCmd.SetServerDetails(serverDetails)
 	searchSpecBuilder := spec.NewBuilder().Pattern(tests.RtRepo1).SortBy([]string{"created"}).SortOrder("asc").Limit(3)
 	searchCmd.SetSpec(searchSpecBuilder.BuildSpec())
 	reader, err := searchCmd.Search()
@@ -3190,7 +3365,7 @@ func TestArtifactoryOffset(t *testing.T) {
 func TestArtifactoryCopyByBuildOverridingByInlineFlag(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.CopyByBuildSpec)
 	assert.NoError(t, err)
 
@@ -3216,14 +3391,14 @@ func TestArtifactoryCopyByBuildOverridingByInlineFlag(t *testing.T) {
 	verifyExistInArtifactory(tests.GetBuildCopyExpected(), cpMvDlByBuildAssertSpec, t)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
 func TestArtifactoryMoveByBuildUsingFlags(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.CopyByBuildSpec)
 	assert.NoError(t, err)
 
@@ -3249,7 +3424,7 @@ func TestArtifactoryMoveByBuildUsingFlags(t *testing.T) {
 	verifyExistInArtifactory(tests.GetBuildMoveExpected(), cpMvDlByBuildAssertSpec, t)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -3360,7 +3535,7 @@ func TestArtifactoryMoveExclusionsBySpec(t *testing.T) {
 func TestArtifactoryDeleteByLatestBuild(t *testing.T) {
 	initArtifactoryTest(t)
 	buildNumberA, buildNumberB := "10", "11"
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	specFile, err := tests.CreateSpec(tests.CopyByBuildSpec)
 	assert.NoError(t, err)
 
@@ -3386,7 +3561,7 @@ func TestArtifactoryDeleteByLatestBuild(t *testing.T) {
 	verifyExistInArtifactory(tests.GetBuildDeleteExpected(), cpMvDlByBuildAssertSpec, t)
 
 	// Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -3442,6 +3617,30 @@ func TestSummaryReport(t *testing.T) {
 	cleanArtifactoryTest()
 }
 
+func TestUploadDetailedSummary(t *testing.T) {
+	initArtifactoryTest(t)
+	uploadCmd := generic.NewUploadCommand()
+	fileSpec := spec.NewBuilder().Pattern(filepath.Join("testdata", "a", "a*.in")).Target(tests.RtRepo1).BuildSpec()
+	uploadCmd.SetUploadConfiguration(createUploadConfiguration()).SetSpec(fileSpec).SetServerDetails(serverDetails).SetDetailedSummary(true)
+	commands.Exec(uploadCmd)
+	result := uploadCmd.Result()
+	reader := result.Reader()
+	assert.NoError(t, reader.GetError())
+	defer reader.Close()
+	var files []clientutils.FileTransferDetails
+	for transferDetails := new(clientutils.FileTransferDetails); reader.NextRecord(transferDetails) == nil; transferDetails = new(clientutils.FileTransferDetails) {
+		files = append(files, *transferDetails)
+	}
+	assert.ElementsMatch(t, files, tests.GetExpectedUploadSummaryDetails(*tests.RtUrl))
+	cleanArtifactoryTest()
+}
+
+func createUploadConfiguration() *utils.UploadConfiguration {
+	uploadConfiguration := new(utils.UploadConfiguration)
+	uploadConfiguration.Threads = cliutils.Threads
+	return uploadConfiguration
+}
+
 func TestArtifactoryBuildDiscard(t *testing.T) {
 	// Initialize
 	initArtifactoryTest(t)
@@ -3470,7 +3669,7 @@ func TestArtifactoryBuildDiscard(t *testing.T) {
 	assert.Zero(t, jsonResponse, "Incorrect operation of build-discard by max-days.")
 
 	//Cleanup
-	inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	cleanArtifactoryTest()
 }
 
@@ -3509,7 +3708,7 @@ func TestArtifactorySearchIncludeDir(t *testing.T) {
 	// Prepare search command
 	searchSpecBuilder := spec.NewBuilder().Pattern(tests.RtRepo1).Recursive(true)
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails)
+	searchCmd.SetServerDetails(serverDetails)
 	searchCmd.SetSpec(searchSpecBuilder.IncludeDirs(false).BuildSpec())
 	reader, err := searchCmd.Search()
 	assert.NoError(t, err)
@@ -3569,7 +3768,7 @@ func TestArtifactorySearchProps(t *testing.T) {
 	// Prepare search command
 	searchSpecBuilder := spec.NewBuilder().Pattern(tests.RtRepo1).Recursive(true)
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails)
+	searchCmd.SetServerDetails(serverDetails)
 
 	// Search artifacts with c=3
 	searchCmd.SetSpec(searchSpecBuilder.Props("c=3").BuildSpec())
@@ -3721,7 +3920,7 @@ func TestArtifactoryDeleteExcludeProps(t *testing.T) {
 	// Prepare search command
 	searchSpecBuilder := spec.NewBuilder().Pattern(tests.RtRepo1).Recursive(true)
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails)
+	searchCmd.SetServerDetails(serverDetails)
 
 	// Delete all artifacts without c=1 but keep dirs that has at least one artifact with c=1 props
 	artifactoryCli.Exec("delete", tests.RtRepo1+"/*", "--exclude-props=c=1")
@@ -3746,7 +3945,7 @@ func TestArtifactoryDeleteExcludeProps(t *testing.T) {
 }
 
 func getAllBuildsByBuildName(client *httpclient.HttpClient, buildName string, t *testing.T, expectedHttpStatusCode int) buildsApiResponseStruct {
-	resp, body, _, _ := client.SendGet(artifactoryDetails.Url+"api/build/"+buildName, true, artHttpDetails)
+	resp, body, _, _ := client.SendGet(serverDetails.ArtifactoryUrl+"api/build/"+buildName, true, artHttpDetails, "")
 	assert.Equal(t, expectedHttpStatusCode, resp.StatusCode, "Failed retrieving build information from artifactory.")
 
 	buildsApiResponse := &buildsApiResponseStruct{}
@@ -3800,6 +3999,8 @@ func cleanArtifactoryTest() {
 		return
 	}
 	os.Unsetenv(coreutils.HomeDir)
+	os.Unsetenv(coreutils.BuildName)
+	os.Unsetenv(coreutils.BuildNumber)
 	log.Info("Cleaning test data...")
 	cleanArtifactory()
 	tests.CleanFileSystem()
@@ -3820,42 +4021,27 @@ func execDeleteRepo(repoName string) {
 	}
 }
 
-func execListRepoRest() ([]string, error) {
-	var repositoryKeys []string
+func execDeleteUser(username string) {
+	err := artifactoryCli.Exec("users-delete", username, "--quiet")
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+}
 
-	// Build http client
-	client, err := httpclient.ClientBuilder().Build()
+func getAllRepos() (repositoryKeys []string, err error) {
+	servicesManager, err := utils.CreateServiceManager(serverDetails, -1, false)
 	if err != nil {
 		return nil, err
 	}
-
-	// Send get request
-	resp, body, _, err := client.SendGet(artifactoryDetails.Url+"api/repositories", true, artHttpDetails)
+	repos, err := servicesManager.GetAllRepositories()
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, errors.New("Artifactory response: " + resp.Status + "\n" + clientutils.IndentJson(body))
+	for _, repo := range *repos {
+		repositoryKeys = append(repositoryKeys, repo.Key)
 	}
-
-	// Extract repository keys from the json response
-	var keyError error
-	_, err = jsonparser.ArrayEach(body, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
-		if err != nil || keyError != nil {
-			return
-		}
-		repoKey, err := jsonparser.GetString(value, "key")
-		if err != nil {
-			keyError = err
-			return
-		}
-		repositoryKeys = append(repositoryKeys, repoKey)
-	})
-	if keyError != nil {
-		return nil, err
-	}
-
-	return repositoryKeys, err
+	return
 }
 
 func execListBuildNamesRest() ([]string, error) {
@@ -3868,7 +4054,7 @@ func execListBuildNamesRest() ([]string, error) {
 	}
 
 	// Send get request
-	resp, body, _, err := client.SendGet(artifactoryDetails.Url+"api/build", true, artHttpDetails)
+	resp, body, _, err := client.SendGet(serverDetails.ArtifactoryUrl+"api/build", true, artHttpDetails, "")
 	if err != nil {
 		return nil, err
 	}
@@ -3913,7 +4099,7 @@ func execCreateRepoRest(repoConfig, repoName string) {
 		log.Error(err)
 		os.Exit(1)
 	}
-	resp, body, err := client.SendPut(artifactoryDetails.Url+"api/repositories/"+repoName, content, artHttpDetails)
+	resp, body, err := client.SendPut(serverDetails.ArtifactoryUrl+"api/repositories/"+repoName, content, artHttpDetails, "")
 	if err != nil {
 		log.Error(err)
 		os.Exit(1)
@@ -3925,6 +4111,21 @@ func execCreateRepoRest(repoConfig, repoName string) {
 	log.Info("Repository", repoName, "created.")
 }
 
+func getAllUsernames() (usersnames []string, err error) {
+	servicesManager, err := utils.CreateServiceManager(serverDetails, -1, false)
+	if err != nil {
+		return nil, err
+	}
+	users, err := servicesManager.GetAllUsers()
+	if err != nil {
+		return nil, err
+	}
+	for _, user := range users {
+		usersnames = append(usersnames, user.Name)
+	}
+	return
+}
+
 func createRequiredRepos() {
 	tests.CreatedNonVirtualRepositories = tests.GetNonVirtualRepositories()
 	createRepos(tests.CreatedNonVirtualRepositories)
@@ -3934,13 +4135,17 @@ func createRequiredRepos() {
 
 func cleanUpOldBuilds() {
 	tests.CleanUpOldItems(tests.GetBuildNames(), execListBuildNamesRest, func(buildName string) {
-		inttestutils.DeleteBuild(artifactoryDetails.Url, buildName, artHttpDetails)
+		inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, buildName, artHttpDetails)
 		log.Info("Build", buildName, "deleted.")
 	})
 }
 
 func cleanUpOldRepositories() {
-	tests.CleanUpOldItems(tests.GetAllRepositoriesNames(), execListRepoRest, execDeleteRepo)
+	tests.CleanUpOldItems(tests.GetAllRepositoriesNames(), getAllRepos, execDeleteRepo)
+}
+
+func cleanUpOldUsers() {
+	tests.CleanUpOldItems(tests.GetTestUsersNames(), getAllUsernames, execDeleteUser)
 }
 
 func createRepos(repos map[*string]string) {
@@ -3981,13 +4186,13 @@ func cleanArtifactory() {
 		os.Exit(1)
 	}
 	deleteSpec, _ := spec.CreateSpecFromFile(deleteSpecFile, nil)
-	tests.DeleteFiles(deleteSpec, artifactoryDetails)
+	tests.DeleteFiles(deleteSpec, serverDetails)
 }
 
 func searchInArtifactory(specFile string, t *testing.T) ([]utils.SearchResult, error) {
 	searchSpec, _ := spec.CreateSpecFromFile(specFile, nil)
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails).SetSpec(searchSpec)
+	searchCmd.SetServerDetails(serverDetails).SetSpec(searchSpec)
 	reader, err := searchCmd.Search()
 	assert.NoError(t, err)
 	var resultItems []utils.SearchResult
@@ -4003,7 +4208,7 @@ func searchInArtifactory(specFile string, t *testing.T) ([]utils.SearchResult, e
 }
 
 func getSpecAndCommonFlags(specFile string) (*spec.SpecFiles, rtutils.CommonConf) {
-	searchFlags := new(rtutils.CommonConfImpl)
+	searchFlags, _ := rtutils.NewCommonConfImpl(artAuth)
 	searchSpec, _ := spec.CreateSpecFromFile(specFile, nil)
 	return searchSpec, searchFlags
 }
@@ -4020,7 +4225,7 @@ func verifyDoesntExistInArtifactory(specFile string, t *testing.T) {
 func verifyExistInArtifactoryByProps(expected []string, pattern, props string, t *testing.T) {
 	searchSpec := spec.NewBuilder().Pattern(pattern).Props(props).Recursive(true).BuildSpec()
 	searchCmd := generic.NewSearchCommand()
-	searchCmd.SetRtDetails(artifactoryDetails).SetSpec(searchSpec)
+	searchCmd.SetServerDetails(serverDetails).SetSpec(searchSpec)
 	reader, err := searchCmd.Search()
 	assert.NoError(t, err)
 	var resultItems []utils.SearchResult
@@ -4041,7 +4246,7 @@ func isRepoExist(repoName string) bool {
 		log.Error(err)
 		os.Exit(1)
 	}
-	resp, _, _, err := client.SendGet(artifactoryDetails.Url+tests.RepoDetailsUrl+repoName, true, artHttpDetails)
+	resp, _, _, err := client.SendGet(serverDetails.ArtifactoryUrl+tests.RepoDetailsUrl+repoName, true, artHttpDetails, "")
 	if err != nil {
 		log.Error(err)
 		os.Exit(1)
@@ -4063,17 +4268,17 @@ func getCliDotGitPath(t *testing.T) string {
 }
 
 func deleteServerConfig() {
-	configArtifactoryCli.Exec("c", "delete", tests.RtServerId, "--interactive=false")
+	configCli.WithoutCredentials().Exec("rm", tests.RtServerId, "--quiet")
 }
 
 // This function will create server config and return the entire passphrase flag if it needed.
 // For example if passphrase is needed it will return "--ssh-passphrase=${theConfiguredPassphrase}" or empty string.
-func createServerConfigAndReturnPassphrase() (passphrase string) {
+func createServerConfigAndReturnPassphrase() (passphrase string, err error) {
+	deleteServerConfig()
 	if *tests.RtSshPassphrase != "" {
 		passphrase = "--ssh-passphrase=" + *tests.RtSshPassphrase
 	}
-	configArtifactoryCli.Exec("c", tests.RtServerId, "--interactive=false")
-	return passphrase
+	return passphrase, configCli.Exec("add", tests.RtServerId)
 }
 
 func testCopyMoveNoSpec(command string, beforeCommandExpected, afterCommandExpected []string, t *testing.T) {
@@ -4110,7 +4315,6 @@ func searchItemsInArtifactory(t *testing.T, specSource string) []rtutils.ResultI
 	fileSpec, err := tests.CreateSpec(specSource)
 	assert.NoError(t, err)
 	spec, flags := getSpecAndCommonFlags(fileSpec)
-	flags.SetArtifactoryDetails(artAuth)
 	var resultItems []rtutils.ResultItem
 	for i := 0; i < len(spec.Files); i++ {
 		searchParams, err := utils.GetSearchParams(spec.Get(i))
@@ -4164,60 +4368,70 @@ func TestArtifactoryUploadInflatedPath(t *testing.T) {
 	cleanArtifactoryTest()
 }
 
-func TestGetJcenterRemoteDetails(t *testing.T) {
+func TestGetExtractorsRemoteDetails(t *testing.T) {
 	initArtifactoryTest(t)
-	createServerConfigAndReturnPassphrase()
+	_, err := createServerConfigAndReturnPassphrase()
 	defer deleteServerConfig()
+	assert.NoError(t, err)
 
 	unsetEnvVars := func() {
 		err := os.Unsetenv(utils.JCenterRemoteServerEnv)
 		assert.NoError(t, err)
 		err = os.Unsetenv(utils.JCenterRemoteRepoEnv)
 		assert.NoError(t, err)
+		err = os.Unsetenv(utils.ExtractorsRemoteEnv)
+		assert.NoError(t, err)
 	}
 	unsetEnvVars()
 	defer unsetEnvVars()
 
-	// The utils.JCenterRemoteServerEnv env var is not set, so extractor1.jar should be downloaded from jcenter.
+	// Make sure extractor1.jar downloaded from oss.jfrog.org.
 	downloadPath := "org/jfrog/buildinfo/build-info-extractor/extractor1.jar"
-	expectedRemotePath := path.Join("bintray/jcenter", downloadPath)
-	validateJcenterRemoteDetails(t, downloadPath, expectedRemotePath)
+	expectedRemotePath := path.Join("oss-release-local", downloadPath)
+	validateExtractorRemoteDetails(t, downloadPath, expectedRemotePath)
 
-	// Still, the utils.JCenterRemoteServerEnv env var is not set, so the download should be from jcenter.
-	// Expecting a different download path this time.
+	// Make sure extractor2.jar also downloaded from oss.jfrog.org.
 	downloadPath = "org/jfrog/buildinfo/build-info-extractor/extractor2.jar"
-	expectedRemotePath = path.Join("bintray/jcenter", downloadPath)
-	validateJcenterRemoteDetails(t, downloadPath, expectedRemotePath)
+	expectedRemotePath = path.Join("oss-release-local", downloadPath)
+	validateExtractorRemoteDetails(t, downloadPath, expectedRemotePath)
 
-	// Setting the utils.JCenterRemoteServerEnv env var now,
-	// Expecting therefore the download to be from the the server ID configured by this env var.
-	err := os.Setenv(utils.JCenterRemoteServerEnv, tests.RtServerId)
+	// Set 'JFROG_CLI_EXTRACTORS_REMOTE' and make sure extractor3.jar downloaded from a remote repo 'test-remote-repo' in RtServerId.
+	testRemoteRepo := "test-remote-repo"
+	err = os.Setenv(utils.ExtractorsRemoteEnv, tests.RtServerId+"/"+testRemoteRepo)
 	assert.NoError(t, err)
 	downloadPath = "org/jfrog/buildinfo/build-info-extractor/extractor3.jar"
-	expectedRemotePath = path.Join("jcenter", downloadPath)
-	validateJcenterRemoteDetails(t, downloadPath, expectedRemotePath)
+	expectedRemotePath = path.Join(testRemoteRepo, downloadPath)
+	validateExtractorRemoteDetails(t, downloadPath, expectedRemotePath)
+	err = os.Unsetenv(utils.ExtractorsRemoteEnv)
+	assert.NoError(t, err)
 
-	// Still expecting the download to be from the same server ID, but this time, not through a remote repo named
-	// jcenter, but through test-remote-repo.
-	testRemoteRepo := "test-remote-repo"
+	// Set 'JFROG_CLI_JCENTER_REMOTE_SERVER' and make sure extractor4.jar downloaded from the default 'jcenter' repo in RtServerId.
+	err = os.Setenv(utils.JCenterRemoteServerEnv, tests.RtServerId)
+	assert.NoError(t, err)
+	downloadPath = "org/jfrog/buildinfo/build-info-extractor/extractor4.jar"
+	expectedRemotePath = path.Join("jcenter", downloadPath)
+	validateExtractorRemoteDetails(t, downloadPath, expectedRemotePath)
+
+	// Set 'JFROG_CLI_JCENTER_REMOTE_REPO' to 'test-remote-repo' and make sure extractor5.jar downloaded from this repository.
 	err = os.Setenv(utils.JCenterRemoteRepoEnv, testRemoteRepo)
 	assert.NoError(t, err)
-	downloadPath = "1org/jfrog/buildinfo/build-info-extractor/extractor4.jar"
+	downloadPath = "org/jfrog/buildinfo/build-info-extractor/extractor5.jar"
 	expectedRemotePath = path.Join(testRemoteRepo, downloadPath)
-	validateJcenterRemoteDetails(t, downloadPath, expectedRemotePath)
+	validateExtractorRemoteDetails(t, downloadPath, expectedRemotePath)
+
 	cleanArtifactoryTest()
 }
 
-func validateJcenterRemoteDetails(t *testing.T, downloadPath, expectedRemotePath string) {
-	artDetails, remotePath, err := utils.GetJcenterRemoteDetails(downloadPath)
+func validateExtractorRemoteDetails(t *testing.T, downloadPath, expectedRemotePath string) {
+	serverDetails, remotePath, err := utils.GetExtractorsRemoteDetails(downloadPath)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedRemotePath, remotePath)
-	assert.False(t, os.Getenv(utils.JCenterRemoteServerEnv) != "" && artDetails == nil, "Expected a server to be returned")
+	assert.False(t, os.Getenv(utils.JCenterRemoteServerEnv) != "" && serverDetails == nil, "Expected a server to be returned")
 }
 
 func TestVcsProps(t *testing.T) {
 	initArtifactoryTest(t)
-	defer inttestutils.DeleteBuild(artifactoryDetails.Url, tests.RtBuildName1, artHttpDetails)
+	defer inttestutils.DeleteBuild(serverDetails.ArtifactoryUrl, tests.RtBuildName1, artHttpDetails)
 	testDir := initVcsTestDir(t)
 	artifactoryCli.Exec("upload", filepath.Join(testDir, "*"), tests.RtRepo1, "--flat=false", "--build-name="+tests.RtBuildName1, "--build-number=2020")
 	resultItems := searchItemsInArtifactory(t, tests.SearchRepo1ByInSuffix)
@@ -4271,10 +4485,27 @@ func initVcsTestDir(t *testing.T) string {
 	return path
 }
 
+func TestConfigAddOverwrite(t *testing.T) {
+	initArtifactoryTest(t)
+	// Add a new instance.
+	err := tests.NewJfrogCli(execMain, "jfrog config", "").Exec("add", tests.RtServerId, "--artifactory-url="+*tests.RtUrl, "--user=admin", "--password=password", "--enc-password=false")
+	// Remove the instance at the end of the test.
+	defer tests.NewJfrogCli(execMain, "jfrog config", "").Exec("rm", tests.RtServerId, "--quiet")
+	// Expect no error, because the instance we created has a unique ID.
+	assert.NoError(t, err)
+	// Try creating an instance with the same ID, and expect to fail, because an instance with the
+	// same ID already exists.
+	err = tests.NewJfrogCli(execMain, "jfrog config", "").Exec("add", tests.RtServerId, "--artifactory-url="+*tests.RtUrl, "--user=admin", "--password=password", "--enc-password=false")
+	assert.Error(t, err)
+	// Now create it again, this time with the --overwrite option and expect no error.
+	err = tests.NewJfrogCli(execMain, "jfrog config", "").Exec("add", tests.RtServerId, "--overwrite", "--artifactory-url="+*tests.RtUrl, "--user=admin2", "--password=password", "--enc-password=false")
+	assert.NoError(t, err)
+}
+
 func TestArtifactoryReplicationCreate(t *testing.T) {
 	initArtifactoryTest(t)
 	// Configure server with dummy credentials
-	err := tests.NewJfrogCli(execMain, "jfrog rt", "").Exec("c", tests.RtServerId, "--url="+*tests.RtUrl, "--user=admin", "--password=password", "--interactive=false", "--enc-password=false")
+	err := tests.NewJfrogCli(execMain, "jfrog config", "").Exec("add", tests.RtServerId, "--artifactory-url="+*tests.RtUrl, "--user=admin", "--password=password", "--enc-password=false")
 	defer deleteServerConfig()
 	assert.NoError(t, err)
 
@@ -4287,7 +4518,7 @@ func TestArtifactoryReplicationCreate(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Validate create replication
-	servicesManager, err := utils.CreateServiceManager(artifactoryDetails, false)
+	servicesManager, err := utils.CreateServiceManager(serverDetails, -1, false)
 	assert.NoError(t, err)
 	result, err := servicesManager.GetReplication(tests.RtRepo1)
 	assert.NoError(t, err)
@@ -4325,7 +4556,7 @@ func TestAccessTokenCreate(t *testing.T) {
 			*tests.RtAccessToken = origAccessToken
 		}()
 		*tests.RtAccessToken = ""
-		err := tests.NewJfrogCli(execMain, "jfrog rt", authenticate()).Exec("atc")
+		err := tests.NewJfrogCli(execMain, "jfrog rt", authenticate(false)).Exec("atc")
 		assert.NoError(t, err)
 	} else {
 		err := artifactoryCli.Exec("atc")
@@ -4368,13 +4599,14 @@ func TestRefreshableTokens(t *testing.T) {
 	}
 
 	// Create server with initialized refreshable tokens.
-	_ = createServerConfigAndReturnPassphrase()
+	_, err := createServerConfigAndReturnPassphrase()
 	defer deleteServerConfig()
+	assert.NoError(t, err)
 
 	// Upload a file and assert the refreshable tokens were generated.
 	artifactoryCommandExecutor := tests.NewJfrogCli(execMain, "jfrog rt", "")
 	uploadedFiles := 1
-	err := uploadWithSpecificServerAndVerify(t, artifactoryCommandExecutor, tests.RtServerId, "testdata/a/a1.in", uploadedFiles)
+	err = uploadWithSpecificServerAndVerify(t, artifactoryCommandExecutor, tests.RtServerId, "testdata/a/a1.in", uploadedFiles)
 	if err != nil {
 		return
 	}
@@ -4448,7 +4680,7 @@ func TestRefreshableTokens(t *testing.T) {
 }
 
 func setRefreshTokenInConfig(t *testing.T, serverId, token string) error {
-	details, err := config.GetAllArtifactoryConfigs()
+	details, err := config.GetAllServersConfigs()
 	if err != nil {
 		assert.NoError(t, err)
 		return err
@@ -4458,12 +4690,12 @@ func setRefreshTokenInConfig(t *testing.T, serverId, token string) error {
 			server.SetRefreshToken(token)
 		}
 	}
-	assert.NoError(t, config.SaveArtifactoryConf(details))
+	assert.NoError(t, config.SaveServersConf(details))
 	return nil
 }
 
 func setPasswordInConfig(t *testing.T, serverId, password string) error {
-	details, err := config.GetAllArtifactoryConfigs()
+	details, err := config.GetAllServersConfigs()
 	if err != nil {
 		assert.NoError(t, err)
 		return err
@@ -4473,12 +4705,12 @@ func setPasswordInConfig(t *testing.T, serverId, password string) error {
 			server.SetPassword(password)
 		}
 	}
-	assert.NoError(t, config.SaveArtifactoryConf(details))
+	assert.NoError(t, config.SaveServersConf(details))
 	return nil
 }
 
 func getTokensFromConfig(t *testing.T, serverId string) (accessToken, refreshToken string, err error) {
-	details, err := config.GetArtifactorySpecificConfig(serverId, false, false)
+	details, err := config.GetSpecificConfig(serverId, false, false)
 	if err != nil {
 		assert.NoError(t, err)
 		return "", "", err
@@ -4505,4 +4737,145 @@ func uploadWithSpecificServerAndVerify(t *testing.T, cli *tests.JfrogCli, server
 	}
 	assert.Len(t, searchItemsInArtifactory(t, tests.SearchRepo1ByInSuffix), expectedResults)
 	return nil
+}
+
+func TestArtifactorySimpleUploadAntPattern(t *testing.T) {
+	initArtifactoryTest(t)
+
+	// --ant and --regexp together: should get an error
+	uploadUsingAntAndRegexpTogether(t)
+	// Upload empty dir
+	uploadUsingAntAIncludeDirsAndFlat(t)
+	// Simple uploads
+	simpleUploadAntIsTrueRegexpIsFalse(t)
+	simpleUploadWithAntPatternSpec(t)
+
+	cleanArtifactoryTest()
+}
+
+func uploadUsingAntAndRegexpTogether(t *testing.T) {
+	filePath := getAntPatternFilePath()
+	err := artifactoryCli.Exec("upload", filePath, tests.RtRepo1, "--regexp", "--ant")
+	assert.Error(t, err)
+}
+
+func simpleUploadAntIsTrueRegexpIsFalse(t *testing.T) {
+	filePath := getAntPatternFilePath()
+	err := artifactoryCli.Exec("upload", filePath, tests.RtRepo1, "--ant", "--regexp=false")
+	assert.NoError(t, err)
+	searchFilePath, err := tests.CreateSpec(tests.SearchRepo1ByInSuffix)
+	assert.NoError(t, err)
+	verifyExistInArtifactory(tests.GetSimpleAntPatternUploadExpectedRepo1(), searchFilePath, t)
+}
+
+func simpleUploadWithAntPatternSpec(t *testing.T) {
+	// Init tmp dir
+	specFile, err := tests.CreateSpec(tests.UploadAntPattern)
+	assert.NoError(t, err)
+	err = fileutils.CopyDir(tests.GetTestResourcesPath()+"cache", filepath.Dir(specFile), true, nil)
+	assert.NoError(t, err)
+	// Upload
+	artifactoryCli.Exec("upload", "--spec="+specFile)
+	searchFilePath, err := tests.CreateSpec(tests.SearchRepo1ByInSuffix)
+	assert.NoError(t, err)
+	verifyExistInArtifactory(tests.GetSimpleAntPatternUploadExpectedRepo1(), searchFilePath, t)
+	searchFilePath, err = tests.CreateSpec(tests.SearchRepo1NonExistFile)
+	verifyDoesntExistInArtifactory(searchFilePath, t)
+}
+
+func uploadUsingAntAIncludeDirsAndFlat(t *testing.T) {
+	filePath := "testdata/*/empt?/**"
+	err := artifactoryCli.Exec("upload", filePath, tests.RtRepo1, "--ant", "--include-dirs=true", "--flat=true")
+	assert.NoError(t, err)
+	err = artifactoryCli.Exec("upload", filePath, tests.RtRepo1, "--ant", "--include-dirs=true", "--flat=false")
+	assert.NoError(t, err)
+	searchFilePath, err := tests.CreateSpec(tests.SearchRepo1IncludeDirs)
+	assert.NoError(t, err)
+	verifyExistInArtifactory(tests.GetAntPatternUploadWithIncludeDirsExpectedRepo1(), searchFilePath, t)
+}
+
+func TestUploadWithAntPatternAndExclusionsSpec(t *testing.T) {
+	initArtifactoryTest(t)
+	// Init tmp dir
+	specFile, err := tests.CreateSpec(tests.UploadAntPatternExclusions)
+	assert.NoError(t, err)
+	err = fileutils.CopyDir(tests.GetTestResourcesPath(), filepath.Dir(specFile), true, nil)
+	assert.NoError(t, err)
+	// Upload
+	artifactoryCli.Exec("upload", "--spec="+specFile)
+	searchFilePath, err := tests.CreateSpec(tests.SearchRepo1ByInSuffix)
+	assert.NoError(t, err)
+	verifyExistInArtifactory(tests.GetAntPatternUploadWithExclusionsExpectedRepo1(), searchFilePath, t)
+	searchFilePath, err = tests.CreateSpec(tests.SearchRepo1NonExistFileAntExclusions)
+	verifyDoesntExistInArtifactory(searchFilePath, t)
+	cleanArtifactoryTest()
+}
+
+func TestPermissionTargets(t *testing.T) {
+	initArtifactoryTest(t)
+	servicesManager, err := utils.CreateServiceManager(serverDetails, -1, false)
+	if err != nil {
+		assert.NoError(t, err)
+		return
+	}
+	templatePath := filepath.Join(tests.GetTestResourcesPath(), "permissiontarget", "template")
+
+	// Create permission target on specific repo.
+	assert.NoError(t, artifactoryCli.Exec("ptc", templatePath, createPermissionTargetsTemplateVars(tests.RtRepo1)))
+	assertPermissionTarget(t, servicesManager, tests.RtRepo1)
+
+	// Update permission target to ANY repo.
+	any := "ANY"
+	assert.NoError(t, artifactoryCli.Exec("ptu", templatePath, createPermissionTargetsTemplateVars(any)))
+	assertPermissionTarget(t, servicesManager, any)
+
+	// Delete permission target.
+	assert.NoError(t, artifactoryCli.Exec("ptdel", tests.RtPermissionTargetName))
+	assertPermissionTargetDeleted(t, servicesManager)
+
+	cleanArtifactoryTest()
+}
+
+func createPermissionTargetsTemplateVars(reposValue string) string {
+	ptNameVarKey := "pt_name"
+	reposVarKey := "repos_var"
+	return fmt.Sprintf("--vars=%s=%s;%s=%s", ptNameVarKey, tests.RtPermissionTargetName, reposVarKey, reposValue)
+}
+
+func assertPermissionTarget(t *testing.T, manager artifactory.ArtifactoryServicesManager, repoValue string) {
+	actual, err := manager.GetPermissionTarget(tests.RtPermissionTargetName)
+	if err != nil {
+		assert.NoError(t, err)
+		return
+	}
+	expected := tests.GetExpectedPermissionTarget(repoValue)
+	assert.EqualValues(t, expected, *actual)
+}
+
+func assertPermissionTargetDeleted(t *testing.T, manager artifactory.ArtifactoryServicesManager) {
+	permission, err := manager.GetPermissionTarget(tests.RtPermissionTargetName)
+	assert.NoError(t, err)
+	assert.Nil(t, permission)
+}
+
+func cleanPermissionTarget() {
+	_ = artifactoryCli.Exec("ptdel", tests.RtPermissionTargetName)
+}
+
+func TestArtifactoryCurl(t *testing.T) {
+	initArtifactoryTest(t)
+	_, err := createServerConfigAndReturnPassphrase()
+	defer deleteServerConfig()
+	assert.NoError(t, err)
+	// Check curl command with config default server
+	err = artifactoryCli.WithoutCredentials().Exec("curl", "-XGET", "/api/system/version")
+	assert.NoError(t, err)
+	// Check curl command with '--server-id' flag
+	err = artifactoryCli.WithoutCredentials().Exec("curl", "-XGET", "/api/system/version", "--server-id="+tests.RtServerId)
+	assert.NoError(t, err)
+	// Check curl command with invalid server id - should get an error.
+	err = artifactoryCli.WithoutCredentials().Exec("curl", "-XGET", "/api/system/version", "--server-id=not_configured_name_"+tests.RtServerId)
+	assert.Error(t, err)
+
+	cleanArtifactoryTest()
 }

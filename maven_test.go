@@ -1,6 +1,9 @@
 package main
 
 import (
+	"github.com/jfrog/jfrog-cli-core/artifactory/commands/mvn"
+	"github.com/jfrog/jfrog-cli-core/artifactory/utils"
+	"github.com/jfrog/jfrog-cli-core/common/commands"
 	"io/ioutil"
 	"net/url"
 	"os"
@@ -25,9 +28,9 @@ var localRepoDir string
 func cleanMavenTest() {
 	os.Unsetenv(coreutils.HomeDir)
 	deleteSpec := spec.NewBuilder().Pattern(tests.MvnRepo1).BuildSpec()
-	tests.DeleteFiles(deleteSpec, artifactoryDetails)
+	tests.DeleteFiles(deleteSpec, serverDetails)
 	deleteSpec = spec.NewBuilder().Pattern(tests.MvnRepo2).BuildSpec()
-	tests.DeleteFiles(deleteSpec, artifactoryDetails)
+	tests.DeleteFiles(deleteSpec, serverDetails)
 	tests.CleanFileSystem()
 }
 
@@ -55,6 +58,29 @@ func TestNativeMavenBuildWithServerID(t *testing.T) {
 	err := os.Chdir(oldHomeDir)
 	assert.NoError(t, err)
 	// Validate
+	searchSpec, err := tests.CreateSpec(tests.SearchAllMaven)
+	assert.NoError(t, err)
+	verifyExistInArtifactory(tests.GetMavenDeployedArtifacts(), searchSpec, t)
+	cleanMavenTest()
+}
+
+func TestNativeMavenBuildWithServerIDAndDetailedSummary(t *testing.T) {
+	initMavenTest(t, false)
+	pomPath := createMavenProject(t)
+	configFilePath := filepath.Join(filepath.FromSlash(tests.GetTestResourcesPath()), "buildspecs", tests.MavenConfig)
+	destPath := filepath.Join(filepath.Dir(pomPath), ".jfrog", "projects")
+	createConfigFile(destPath, configFilePath, t)
+	oldHomeDir := changeWD(t, filepath.Dir(pomPath))
+	repoLocalSystemProp := localRepoSystemProperty + localRepoDir
+	pomPath = strings.Replace(pomPath, `\`, "/", -1) // Windows compatibility.
+	filteredMavenArgs := []string{"clean", "install", "-f", pomPath, repoLocalSystemProp}
+	mvnCmd := mvn.NewMvnCommand().SetConfiguration(new(utils.BuildConfiguration)).SetConfigPath(filepath.Join(destPath, tests.MavenConfig)).SetGoals(filteredMavenArgs).SetDetailedSummary(true)
+	assert.NoError(t, commands.Exec(mvnCmd))
+	err := os.Chdir(oldHomeDir)
+	assert.NoError(t, err)
+	// Validate
+	tests.VerifySha256DetailedSummaryFromResult(t, mvnCmd.Result())
+
 	searchSpec, err := tests.CreateSpec(tests.SearchAllMaven)
 	assert.NoError(t, err)
 	verifyExistInArtifactory(tests.GetMavenDeployedArtifacts(), searchSpec, t)
@@ -101,7 +127,7 @@ func TestInsecureTlsMavenBuild(t *testing.T) {
 	initMavenTest(t, true)
 	// Establish a reverse proxy without any certificates
 	os.Setenv(tests.HttpsProxyEnvVar, mavenTestsProxyPort)
-	go cliproxy.StartLocalReverseHttpProxy(artifactoryDetails.Url, false)
+	go cliproxy.StartLocalReverseHttpProxy(serverDetails.ArtifactoryUrl, false)
 	// The two certificate files are created by the reverse proxy on startup in the current directory.
 	os.Remove(certificate.KEY_FILE)
 	os.Remove(certificate.CERT_FILE)
@@ -109,7 +135,7 @@ func TestInsecureTlsMavenBuild(t *testing.T) {
 	assert.NoError(t, checkIfServerIsUp(cliproxy.GetProxyHttpsPort(), "https", false))
 	// Save the original Artifactory url, and change the url to proxy url
 	oldRtUrl := tests.RtUrl
-	parsedUrl, err := url.Parse(artifactoryDetails.Url)
+	parsedUrl, err := url.Parse(serverDetails.ArtifactoryUrl)
 	proxyUrl := "https://127.0.0.1:" + cliproxy.GetProxyHttpsPort() + parsedUrl.RequestURI()
 	tests.RtUrl = &proxyUrl
 
